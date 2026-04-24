@@ -1,0 +1,11 @@
+{
+  "Dairy": 7,
+  "Meat": 3,
+  "Vegetables": 5,
+  "Fruits": 6,
+  "Bakery": 4,
+  "Frozen": 90,
+  "Pantry": 180,
+  "Beverages": 30,
+  "Other": 7
+}
