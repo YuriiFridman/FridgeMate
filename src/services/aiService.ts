@@ -12,6 +12,18 @@ export interface GeneratedRecipe {
   time: string;
 }
 
+export interface EventDish {
+  title: string;
+  description: string;
+}
+
+export interface WeeklyPlanDay {
+  day: string;
+  title: string;
+  reason: string;
+  time: string;
+}
+
 const RECEIPT_PROMPT =
   'Ты — шеф-повар. 1. Переводи все продукты на русский. 2. СТРОГО удаляй Pfand и любые позиции тары. 3. Группируй похожие товары. Проанализируй чек и верни JSON {"items": [...]} без лишнего текста. Для каждого товара обязательно укажи fields: name, quantity, category, expiry_days.';
 
@@ -83,6 +95,47 @@ function parseAiRecipeResponse(text: string): GeneratedRecipe[] {
       };
     })
     .filter((recipe) => recipe.title.length > 0 && recipe.steps.length > 0);
+}
+
+function parseEventMenuResponse(text: string): EventDish[] {
+  const jsonPayload = extractJsonObjectText(text);
+  const data = JSON.parse(jsonPayload) as { menu?: unknown } | unknown;
+  const parsed = (data as { menu?: unknown })?.menu ?? data;
+  const normalized = Array.isArray(parsed) ? parsed : [parsed];
+
+  return normalized
+    .map((dish) => {
+      const safeDish = (dish ?? {}) as { title?: unknown; description?: unknown };
+      return {
+        title: String(safeDish.title ?? "").trim(),
+        description: String(safeDish.description ?? "").trim(),
+      };
+    })
+    .filter((dish) => dish.title.length > 0);
+}
+
+function parseWeeklyPlanResponse(text: string): WeeklyPlanDay[] {
+  const jsonPayload = extractJsonObjectText(text);
+  const data = JSON.parse(jsonPayload) as { plan?: unknown } | unknown;
+  const parsed = (data as { plan?: unknown })?.plan ?? data;
+  const normalized = Array.isArray(parsed) ? parsed : [parsed];
+
+  return normalized
+    .map((entry) => {
+      const safe = (entry ?? {}) as {
+        day?: unknown;
+        title?: unknown;
+        reason?: unknown;
+        time?: unknown;
+      };
+      return {
+        day: String(safe.day ?? "").trim(),
+        title: String(safe.title ?? "").trim(),
+        reason: String(safe.reason ?? "").trim(),
+        time: String(safe.time ?? "30 мин").trim() || "30 мин",
+      };
+    })
+    .filter((entry) => entry.day.length > 0 && entry.title.length > 0);
 }
 
 function normalizeImagePayload(imageBase64: string, mimeType = "image/jpeg") {
@@ -235,6 +288,150 @@ export async function generateRecipes(products: string[]): Promise<GeneratedReci
 
   const responseText = responseJson.choices?.[0]?.message?.content ?? "";
   return parseAiRecipeResponse(responseText);
+}
+
+export async function generateEventMenu(peopleCount: number): Promise<EventDish[]> {
+  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  const model = process.env.EXPO_PUBLIC_GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+  if (!apiKey) {
+    throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
+  }
+
+  const prompt =
+    `Нужно составить полноценный праздничный ужин для ${Math.max(1, peopleCount)} человек. ` +
+    `Игнорируй холодильник и доступные продукты. ` +
+    `СТРОГИЕ ПРАВИЛА МЕНЮ: ` +
+    `1) Обязательно 2 салата: один сытный и один свежий. ` +
+    `2) Горячее: ИЛИ Shashlik, ИЛИ Grilled Steaks (не оба сразу). ` +
+    `3) Обязательно добавь закуски. ` +
+    `4) Добавь гарнир и соус/дип, чтобы ужин был полноценным. ` +
+    `5) Итог: 6-8 позиций меню. ` +
+    `Верни только JSON формата {"menu":[{"title":"...","description":"..."}]}.`;
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const rawBody = await response.text();
+  let responseJson: {
+    choices?: Array<{ message?: { content?: string } }>;
+    error?: { message?: string };
+  } = {};
+  try {
+    responseJson = JSON.parse(rawBody) as typeof responseJson;
+  } catch {
+    responseJson = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(responseJson.error?.message ?? "Ошибка генерации меню.");
+  }
+
+  const responseText = responseJson.choices?.[0]?.message?.content ?? "";
+  return parseEventMenuResponse(responseText);
+}
+
+export async function generateWeeklyPlan(products: string[]): Promise<WeeklyPlanDay[]> {
+  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  const model = process.env.EXPO_PUBLIC_GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
+  if (!apiKey) {
+    throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
+  }
+
+  const productList = products.length > 0 ? products.join(", ") : "продукты не указаны";
+  const prompt =
+    `Составь недельный план ужинов на 7 дней на основе продуктов: ${productList}. ` +
+    `Приоритет: сначала использовать скоропортящиеся продукты. ` +
+    `Верни только JSON: {"plan":[{"day":"Понедельник","title":"...","reason":"почему это блюдо подходит по срокам","time":"25 мин"}]}.`;
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const rawBody = await response.text();
+  let responseJson: {
+    choices?: Array<{ message?: { content?: string } }>;
+    error?: { message?: string };
+  } = {};
+  try {
+    responseJson = JSON.parse(rawBody) as typeof responseJson;
+  } catch {
+    responseJson = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(responseJson.error?.message ?? "Ошибка генерации недельного плана.");
+  }
+
+  const responseText = responseJson.choices?.[0]?.message?.content ?? "";
+  return parseWeeklyPlanResponse(responseText);
+}
+
+export function compareIngredientsWithInventory(
+  ingredients: string[],
+  inventory: string[],
+): { inStock: string[]; missing: string[] } {
+  const normalizeFoodName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/\d+([.,]\d+)?\s*(г|гр|кг|мл|л|шт|шт\.|pcs|pc)\b/gi, " ")
+      .replace(/[^a-zа-яё\s-]/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const normalizedInventory = inventory
+    .map((item) => normalizeFoodName(item))
+    .filter((item) => item.length > 0);
+  const uniqueIngredients = Array.from(
+    new Set(ingredients.map((ingredient) => ingredient.trim()).filter(Boolean)),
+  );
+
+  const inStock: string[] = [];
+  const missing: string[] = [];
+
+  uniqueIngredients.forEach((ingredient) => {
+    const normalized = normalizeFoodName(ingredient);
+    if (!normalized) return;
+
+    const ingredientTokens = normalized.split(" ").filter((token) => token.length >= 4);
+    const exists = normalizedInventory.some(
+      (item) => {
+        if (item === normalized) return true;
+        if (normalized.length >= 5 && item.includes(normalized)) return true;
+        if (item.length >= 5 && normalized.includes(item)) return true;
+
+        const itemTokens = item.split(" ").filter((token) => token.length >= 4);
+        const overlap = ingredientTokens.filter((token) => itemTokens.includes(token)).length;
+        return overlap >= Math.min(ingredientTokens.length, 2) && overlap > 0;
+      },
+    );
+    if (exists) {
+      inStock.push(ingredient);
+    } else {
+      missing.push(ingredient);
+    }
+  });
+
+  return { inStock, missing };
 }
 
 export { RECEIPT_PROMPT };

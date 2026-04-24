@@ -15,7 +15,8 @@
       "bundleIdentifier": "com.fridgemate.app"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ]
   }
 }

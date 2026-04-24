@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -48,8 +48,10 @@ interface ManualAddModalProps {
   visible: boolean;
   onClose: () => void;
   onSubmit: (payload: ManualAddPayload) => Promise<void>;
-  onScanReceipt: (source: "camera" | "library") => Promise<void>;
+  onScanReceipt?: (source: "camera" | "library") => Promise<void>;
   isAnalyzingReceipt?: boolean;
+  mode?: "add" | "edit";
+  initialValues?: ManualAddPayload | null;
 }
 
 export function ManualAddModal({
@@ -58,6 +60,8 @@ export function ManualAddModal({
   onSubmit,
   onScanReceipt,
   isAnalyzingReceipt = false,
+  mode = "add",
+  initialValues,
 }: ManualAddModalProps) {
   const insets = useSafeAreaInsets();
   const { isDark, palette } = useAppTheme();
@@ -68,6 +72,23 @@ export function ManualAddModal({
   const [showPicker, setShowPicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSourceMenuOpen, setIsSourceMenuOpen] = useState(false);
+  const isEditMode = mode === "edit";
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!initialValues) {
+      setName("");
+      setCategory("Dairy");
+      setQuantity("1");
+      setExpiryDate(new Date());
+      return;
+    }
+
+    setName(initialValues.name);
+    setCategory(initialValues.category);
+    setQuantity(String(Math.max(1, initialValues.quantity)));
+    setExpiryDate(initialValues.expiryDate);
+  }, [initialValues, visible]);
 
   const canSubmit = useMemo(
     () => name.trim().length > 0 && Number(quantity) > 0,
@@ -85,10 +106,6 @@ export function ManualAddModal({
         quantity: Math.max(1, Number(quantity)),
         expiryDate,
       });
-      setName("");
-      setCategory("Dairy");
-      setQuantity("1");
-      setExpiryDate(new Date());
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -124,7 +141,9 @@ export function ManualAddModal({
           >
             <View style={[styles.handle, { backgroundColor: isDark ? "#475569" : "#D1D5DB" }]} />
             <View style={styles.sheetHeader}>
-              <Text style={[styles.title, { color: palette.text }]}>Добавить вручную</Text>
+              <Text style={[styles.title, { color: palette.text }]}>
+                {isEditMode ? "Редактировать продукт" : "Добавить вручную"}
+              </Text>
               <Pressable style={[styles.closeButton, { borderColor: palette.border }]} onPress={onClose}>
                 <X size={18} color={palette.text} />
               </Pressable>
@@ -196,43 +215,56 @@ export function ManualAddModal({
               ) : null}
 
               <View style={styles.actions}>
-                <Pressable
-                  style={[styles.scanButton, isAnalyzingReceipt && styles.buttonDisabled]}
-                  onPress={() => {
-                    setIsSourceMenuOpen((prev) => !prev);
-                  }}
-                  disabled={isAnalyzingReceipt}
-                >
-                  {isAnalyzingReceipt ? (
-                    <ActivityIndicator size="small" color={palette.text} />
-                  ) : (
-                    <ScanLine size={16} color={palette.text} />
-                  )}
-                  <Text style={[styles.scanText, { color: palette.text }]}>
-                    {isAnalyzingReceipt ? "Анализирую..." : "Сканировать чек"}
-                  </Text>
-                </Pressable>
-                {isSourceMenuOpen ? (
-                  <View style={[styles.scanMenu, { backgroundColor: palette.card, borderColor: palette.border }]}>
+                {!isEditMode && onScanReceipt ? (
+                  <>
                     <Pressable
-                      style={styles.scanMenuItem}
+                      style={[styles.scanButton, isAnalyzingReceipt && styles.buttonDisabled]}
                       onPress={() => {
-                        setIsSourceMenuOpen(false);
-                        void onScanReceipt("camera");
+                        setIsSourceMenuOpen((prev) => !prev);
                       }}
+                      disabled={isAnalyzingReceipt}
                     >
-                      <Text style={[styles.scanMenuText, { color: palette.text }]}>Сделать фото</Text>
+                      {isAnalyzingReceipt ? (
+                        <ActivityIndicator size="small" color={palette.text} />
+                      ) : (
+                        <ScanLine size={16} color={palette.text} />
+                      )}
+                      <Text style={[styles.scanText, { color: palette.text }]}>
+                        {isAnalyzingReceipt ? "Анализирую..." : "Сканировать чек"}
+                      </Text>
                     </Pressable>
-                    <Pressable
-                      style={styles.scanMenuItem}
-                      onPress={() => {
-                        setIsSourceMenuOpen(false);
-                        void onScanReceipt("library");
-                      }}
-                    >
-                      <Text style={[styles.scanMenuText, { color: palette.text }]}>Выбрать из галереи</Text>
-                    </Pressable>
-                  </View>
+                    {isSourceMenuOpen ? (
+                      <View
+                        style={[
+                          styles.scanMenu,
+                          { backgroundColor: palette.card, borderColor: palette.border },
+                        ]}
+                      >
+                        <Pressable
+                          style={styles.scanMenuItem}
+                          onPress={() => {
+                            setIsSourceMenuOpen(false);
+                            void onScanReceipt("camera");
+                          }}
+                        >
+                          <Text style={[styles.scanMenuText, { color: palette.text }]}>
+                            Сделать фото
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={styles.scanMenuItem}
+                          onPress={() => {
+                            setIsSourceMenuOpen(false);
+                            void onScanReceipt("library");
+                          }}
+                        >
+                          <Text style={[styles.scanMenuText, { color: palette.text }]}>
+                            Выбрать из галереи
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </>
                 ) : null}
                 <Pressable style={[styles.cancelButton, { borderColor: palette.border, backgroundColor: isDark ? "#0F172A" : "#FFFFFF" }]} onPress={onClose}>
                   <Text style={[styles.cancelText, { color: palette.text }]}>Отмена</Text>
@@ -243,7 +275,7 @@ export function ManualAddModal({
                   disabled={!canSubmit || isSubmitting || isAnalyzingReceipt}
                 >
                   <Text style={styles.submitText}>
-                    {isSubmitting ? "Сохранение..." : "Сохранить"}
+                    {isSubmitting ? "Сохранение..." : isEditMode ? "Обновить" : "Сохранить"}
                   </Text>
                 </Pressable>
               </View>

@@ -9,6 +9,9 @@ import { supabase } from "./src/lib/supabase";
 import AuthScreen from "./src/screens/AuthScreen";
 import InventoryScreen from "./src/screens/InventoryScreen";
 import RecipeScreen from "./src/screens/RecipeScreen";
+import EventsScreen from "./src/screens/EventsScreen";
+import ShoppingScreen from "./src/screens/ShoppingScreen";
+import ProfileScreen from "./src/screens/ProfileScreen";
 import { AppThemeProvider, useAppTheme } from "./src/theme/appTheme";
 
 const Tab = createBottomTabNavigator();
@@ -90,14 +93,20 @@ function AppContent() {
                 backgroundColor: palette.card,
               },
               tabBarIcon: ({ color, size }) => {
-                const iconName =
-                  route.name === "Холодильник" ? "fridge-variant" : "chef-hat";
+                let iconName: keyof typeof MaterialCommunityIcons.glyphMap = "fridge-variant";
+                if (route.name === "Рецепты") iconName = "chef-hat";
+                if (route.name === "Посиделки") iconName = "account-group";
+                if (route.name === "Покупки") iconName = "cart";
+                if (route.name === "Профиль") iconName = "account-circle";
                 return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
               },
             })}
           >
             <Tab.Screen name="Холодильник" component={InventoryScreen} />
             <Tab.Screen name="Рецепты" component={RecipeScreen} />
+            <Tab.Screen name="Посиделки" component={EventsScreen} />
+            <Tab.Screen name="Покупки" component={ShoppingScreen} />
+            <Tab.Screen name="Профиль" component={ProfileScreen} />
           </Tab.Navigator>
         </NavigationContainer>
       ) : (

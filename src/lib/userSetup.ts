@@ -4,6 +4,8 @@ import { supabase } from "./supabase";
 interface ProfileRow {
   id: string;
   household_id: string | null;
+  role?: string | null;
+  full_name?: string | null;
 }
 
 interface HouseholdRow {
@@ -102,6 +104,7 @@ export async function ensureCurrentUserSetup(): Promise<string> {
   const { error: upsertProfileError } = await supabase.from("profiles").upsert({
     id: user.id,
     household_id: household.id,
+    role: "Owner",
     full_name: user.user_metadata?.full_name ?? null,
   });
 
@@ -111,4 +114,77 @@ export async function ensureCurrentUserSetup(): Promise<string> {
 
   await setCachedHouseholdId(household.id);
   return household.id;
+}
+
+export function toFamilyInviteCode(householdId: string): string {
+  return `FAMILY-${householdId}`;
+}
+
+export function parseFamilyInviteCode(code: string): string | null {
+  const trimmed = code.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("FAMILY-")) {
+    return trimmed.slice(7);
+  }
+  return trimmed;
+}
+
+export async function joinFamilyByInviteCode(code: string): Promise<void> {
+  const targetFamilyId = parseFamilyInviteCode(code);
+  if (!targetFamilyId) {
+    throw new Error("Введите корректный код семьи.");
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
+    throw new Error(authError?.message ?? "Пользователь не авторизован.");
+  }
+
+  const { data: targetHousehold, error: targetError } = await supabase
+    .from("households")
+    .select("id")
+    .eq("id", targetFamilyId)
+    .maybeSingle();
+  if (targetError || !targetHousehold) {
+    throw new Error("Семья с таким кодом не найдена.");
+  }
+
+  const { data: currentProfile } = await supabase
+    .from("profiles")
+    .select("household_id, full_name")
+    .eq("id", user.id)
+    .maybeSingle<ProfileRow>();
+
+  const oldFamilyId = currentProfile?.household_id ?? null;
+  if (oldFamilyId === targetFamilyId) {
+    await setCachedHouseholdId(targetFamilyId);
+    return;
+  }
+
+  const { error: upsertError } = await supabase.from("profiles").upsert({
+    id: user.id,
+    household_id: targetFamilyId,
+    role: "Member",
+    full_name: currentProfile?.full_name ?? user.user_metadata?.full_name ?? null,
+  });
+  if (upsertError) {
+    throw new Error(upsertError.message);
+  }
+
+  if (oldFamilyId) {
+    const { data: oldFamily } = await supabase
+      .from("households")
+      .select("created_by")
+      .eq("id", oldFamilyId)
+      .maybeSingle<{ created_by: string }>();
+
+    if (oldFamily?.created_by === user.id) {
+      await supabase.from("households").delete().eq("id", oldFamilyId);
+    }
+  }
+
+  await setCachedHouseholdId(targetFamilyId);
 }

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { supabase } from "../lib/supabase";
+import { joinFamilyByInviteCode } from "../lib/userSetup";
 
 interface AuthScreenProps {
   onAuthSuccess: () => Promise<void>;
@@ -22,6 +23,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [familyCode, setFamilyCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -48,6 +50,9 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         }
 
         if (data.session) {
+          if (familyCode.trim()) {
+            await joinFamilyByInviteCode(familyCode.trim());
+          }
           await onAuthSuccess();
         } else {
           setInfo("Аккаунт создан. Если включено подтверждение, проверьте почту.");
@@ -84,14 +89,25 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           </Text>
 
           {isRegisterMode ? (
-            <TextInput
-              style={styles.input}
-              placeholder="Имя (необязательно)"
-              placeholderTextColor="#9CA3AF"
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-            />
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Имя (необязательно)"
+                placeholderTextColor="#9CA3AF"
+                value={fullName}
+                onChangeText={setFullName}
+                autoCapitalize="words"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Код семьи (необязательно)"
+                placeholderTextColor="#9CA3AF"
+                value={familyCode}
+                onChangeText={setFamilyCode}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </>
           ) : null}
 
           <TextInput

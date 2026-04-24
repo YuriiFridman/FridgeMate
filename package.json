@@ -8,6 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "web:build": "expo export --platform web",
+    "web:preview": "npx serve dist -l 4173",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,20 +27,24 @@
     "expo-file-system": "~19.0.21",
     "expo-haptics": "^55.0.14",
     "expo-image-picker": "~17.0.10",
+    "expo-notifications": "^55.0.20",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
     "git": "^0.1.5",
     "lucide-react-native": "^0.511.0",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
-    "react-native-svg": "^15.12.1"
+    "react-native-svg": "^15.12.1",
+    "react-native-web": "^0.21.0",
+    "typescript": "~5.9.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/react": "~19.1.10",
     "babel-preset-expo": "^55.0.18",
-    "typescript": "~5.8.3"
+    "typescript": "~5.9.2"
   }
 }

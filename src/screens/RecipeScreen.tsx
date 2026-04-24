@@ -1,17 +1,53 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AppCard } from "../components/AppCard";
+import { PrimaryButton } from "../components/PrimaryButton";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { useInventory } from "../hooks/useInventory";
-import { generateRecipes, type GeneratedRecipe } from "../services/aiService";
+import {
+  generateRecipes,
+  generateWeeklyPlan,
+  type GeneratedRecipe,
+  type WeeklyPlanDay,
+} from "../services/aiService";
 import { useAppTheme } from "../theme/appTheme";
 
+function normalizeFoodName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\d+([.,]\d+)?\s*(г|гр|кг|мл|л|шт|шт\.|pcs|pc)\b/gi, " ")
+    .replace(/[^a-zа-яё\s-]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isIngredientMatchedToItem(ingredient: string, itemName: string) {
+  const normalizedIngredient = normalizeFoodName(ingredient);
+  const normalizedItem = normalizeFoodName(itemName);
+  if (!normalizedIngredient || !normalizedItem) return false;
+  if (normalizedIngredient === normalizedItem) return true;
+  if (normalizedIngredient.length >= 5 && normalizedItem.includes(normalizedIngredient)) return true;
+  if (normalizedItem.length >= 5 && normalizedIngredient.includes(normalizedItem)) return true;
+
+  const ingredientTokens = normalizedIngredient
+    .split(" ")
+    .filter((token) => token.length >= 4);
+  const itemTokens = normalizedItem.split(" ").filter((token) => token.length >= 4);
+  const overlap = ingredientTokens.filter((token) => itemTokens.includes(token)).length;
+  return overlap > 0 && overlap >= Math.min(ingredientTokens.length, 2);
+}
+
 export default function RecipeScreen() {
-  const { items, reload, householdLabel } = useInventory();
+  const { items, reload, deleteItem, householdLabel } = useInventory();
   const { isDark, palette } = useAppTheme();
   const [recipes, setRecipes] = useState<GeneratedRecipe[]>([]);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,26 +72,76 @@ export default function RecipeScreen() {
     }
   };
 
+  const handleGenerateWeeklyPlan = async () => {
+    try {
+      setError(null);
+      setIsGeneratingPlan(true);
+      const plan = await generateWeeklyPlan(productsForPrompt);
+      setWeeklyPlan(plan);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать недельный план.");
+    } finally {
+      setIsGeneratingPlan(false);
+    }
+  };
+
+  const handleCooked = (recipe: GeneratedRecipe) => {
+    const usedItems = items.filter((item) => {
+      return recipe.ingredients.some((ingredient) =>
+        isIngredientMatchedToItem(ingredient, item.name),
+      );
+    });
+
+    if (usedItems.length === 0) {
+      Alert.alert("Нет совпадений", "Не удалось определить использованные ингредиенты.");
+      return;
+    }
+
+    Alert.alert(
+      "Подтверждение",
+      "Удалить использованные ингредиенты из холодильника?",
+      [
+        { text: "Отмена", style: "cancel" },
+        {
+          text: "Удалить",
+          style: "destructive",
+          onPress: async () => {
+            await Promise.all(usedItems.map((item) => deleteItem(item.id)));
+            await reload();
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
-      <View style={styles.header}>
-        <MaterialCommunityIcons name="silverware-fork-knife" size={22} color={palette.accent} />
-        <Text style={[styles.title, { color: palette.text }]}>Рецепты</Text>
-      </View>
-      <Text style={[styles.groupLabel, { color: palette.textMuted }]}>{householdLabel}</Text>
-      <Text style={[styles.subtitle, { color: palette.textMuted }]}>Готовим из того, что уже есть в холодильнике</Text>
+      <ScreenHeader
+        title="Рецепты"
+        subtitle="Готовим из того, что уже есть в холодильнике"
+        familyLabel={householdLabel}
+      />
 
       <View style={styles.actions}>
-        <Pressable style={[styles.primaryButton, { backgroundColor: palette.accent }]} onPress={handleGenerateRecipes} disabled={isGenerating}>
-          {isGenerating ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <MaterialCommunityIcons name="chef-hat" size={16} color="#FFFFFF" />
-          )}
-          <Text style={styles.primaryButtonText}>✨ Спасти еду (Создать рецепты)</Text>
-        </Pressable>
+        <View style={styles.primaryWrap}>
+          <PrimaryButton
+            label="✨ Создать рецепт"
+            onPress={handleGenerateRecipes}
+            loading={isGenerating}
+          />
+        </View>
+        <View style={styles.primaryWrap}>
+          <PrimaryButton
+            label="📅 Автоплан на неделю"
+            onPress={handleGenerateWeeklyPlan}
+            loading={isGeneratingPlan}
+          />
+        </View>
         <Pressable
-          style={[styles.syncButton, { borderColor: palette.border, backgroundColor: palette.card }]}
+          style={[
+            styles.syncButton,
+            { borderColor: palette.border, backgroundColor: palette.card },
+          ]}
           onPress={async () => {
             try {
               setIsRefreshing(true);
@@ -66,7 +152,7 @@ export default function RecipeScreen() {
           }}
         >
           <MaterialCommunityIcons name="sync" size={16} color={palette.text} />
-          <Text style={[styles.syncButtonText, { color: palette.text }]}>Sync</Text>
+          <Text style={[styles.syncButtonText, { color: palette.text }]}>Обновить</Text>
         </Pressable>
       </View>
 
@@ -87,9 +173,42 @@ export default function RecipeScreen() {
           />
         }
       >
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {error ? <Text style={[styles.errorText, { backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>{error}</Text> : null}
+        {isGenerating ? (
+          <AppCard style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={palette.accent} />
+            <Text style={[styles.loadingText, { color: palette.textMuted }]}>
+              ИИ думает над рецептами...
+            </Text>
+          </AppCard>
+        ) : null}
+        {weeklyPlan.length > 0 ? (
+          <AppCard style={styles.planCard}>
+            <Text style={[styles.planTitle, { color: palette.text }]}>План ужинов на неделю</Text>
+            {weeklyPlan.map((entry, index) => (
+              <View
+                key={`${entry.day}-${index}`}
+                style={[styles.planRow, { borderBottomColor: palette.border }]}
+              >
+                <Text style={[styles.planDay, { color: palette.accent }]}>{entry.day}</Text>
+                <Text style={[styles.planDish, { color: palette.text }]}>{entry.title}</Text>
+                <Text style={[styles.planReason, { color: palette.textMuted }]}>{entry.reason}</Text>
+                <Text style={[styles.planTime, { color: palette.textMuted }]}>{entry.time}</Text>
+              </View>
+            ))}
+          </AppCard>
+        ) : null}
         {recipes.map((recipe, index) => (
-          <View key={`${recipe.title}-${index}`} style={[styles.recipeCard, { borderColor: isDark ? "#334155" : "#F1F5F9", backgroundColor: palette.card }]}>
+          <AppCard
+            key={`${recipe.title}-${index}`}
+            style={[
+              styles.recipeCard,
+              {
+                borderColor: isDark ? "#334155" : "#F1F5F9",
+                backgroundColor: palette.card,
+              },
+            ]}
+          >
             <View style={styles.recipeTitleRow}>
               <MaterialCommunityIcons name="food-variant" size={18} color={palette.accent} />
               <Text style={[styles.recipeTitle, { color: palette.text }]}>{recipe.title}</Text>
@@ -103,14 +222,15 @@ export default function RecipeScreen() {
             <Text style={[styles.timeBadge, { color: palette.accent }]}>Время: {recipe.time}</Text>
             <Text style={[styles.sectionLabel, { color: isDark ? "#E2E8F0" : "#374151" }]}>Шаги</Text>
             <Text style={[styles.recipeLine, { color: palette.textMuted }]}>{recipe.steps}</Text>
-          </View>
+            <PrimaryButton label="Приготовил(а)" onPress={() => handleCooked(recipe)} />
+          </AppCard>
         ))}
         {!isGenerating && recipes.length === 0 ? (
-          <View style={[styles.emptyCard, { borderColor: palette.border, backgroundColor: palette.card }]}>
+          <AppCard style={styles.emptyCard}>
             <MaterialCommunityIcons name="book-open-page-variant" size={24} color={palette.textMuted} />
             <Text style={[styles.emptyTitle, { color: palette.text }]}>Пока нет рецептов</Text>
             <Text style={[styles.emptySubtitle, { color: palette.textMuted }]}>Нажмите кнопку выше, чтобы получить 3 идеи из ваших продуктов.</Text>
-          </View>
+          </AppCard>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -123,46 +243,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F9FAFB",
     paddingHorizontal: 16,
   },
-  header: {
-    marginTop: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  subtitle: {
-    marginTop: 6,
-    color: "#6B7280",
-    fontWeight: "500",
-  },
-  groupLabel: {
-    marginTop: 6,
-    fontSize: 13,
-    fontWeight: "600",
-  },
   actions: {
     marginTop: 14,
     flexDirection: "row",
     gap: 8,
     marginBottom: 2,
   },
-  primaryButton: {
+  primaryWrap: {
     flex: 1,
-    borderRadius: 12,
-    backgroundColor: "#E11D48",
-    paddingVertical: 12,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
   },
   syncButton: {
     borderRadius: 12,
@@ -174,6 +262,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 6,
+    minWidth: 96,
   },
   syncButtonText: {
     color: "#111827",
@@ -187,16 +276,44 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   recipeCard: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: "#F1F5F9",
     backgroundColor: "#FFFFFF",
     padding: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  planCard: {
+    gap: 8,
+  },
+  planTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  planRow: {
+    borderBottomWidth: 1,
+    paddingBottom: 10,
+    marginBottom: 2,
+    gap: 2,
+  },
+  planDay: {
+    fontWeight: "700",
+  },
+  planDish: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  planReason: {
+    fontSize: 13,
+  },
+  planTime: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   recipeTitleRow: {
     flexDirection: "row",
@@ -244,6 +361,18 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: "#B91C1C",
+    fontWeight: "600",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  loadingCard: {
+    borderRadius: 14,
+    padding: 16,
+    alignItems: "center",
+    gap: 10,
+  },
+  loadingText: {
     fontWeight: "600",
   },
 });

@@ -5,6 +5,7 @@ import {
   getCurrentUserHouseholdId,
   isRlsRecursionError,
 } from "../lib/userSetup";
+import { scheduleExpiryNotification } from "../services/notificationService";
 import { supabase } from "../lib/supabase";
 import type {
   InventoryCategory,
@@ -47,6 +48,7 @@ export function useInventory(): UseInventoryResult {
   const channelInstanceId = useRef(
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   );
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const fetchItems = useCallback(async () => {
     setError(null);
@@ -141,6 +143,11 @@ export function useInventory(): UseInventoryResult {
     if (!realtimeHouseholdId) return;
 
     const channelName = `inventory-realtime-${realtimeHouseholdId}-${channelInstanceId.current}`;
+    if (realtimeChannelRef.current) {
+      void supabase.removeChannel(realtimeChannelRef.current);
+      realtimeChannelRef.current = null;
+    }
+
     const channel = supabase
       .channel(channelName)
       .on(
@@ -156,9 +163,13 @@ export function useInventory(): UseInventoryResult {
         },
       )
       .subscribe();
+    realtimeChannelRef.current = channel;
 
     return () => {
       void supabase.removeChannel(channel);
+      if (realtimeChannelRef.current === channel) {
+        realtimeChannelRef.current = null;
+      }
     };
   }, [fetchItems, realtimeHouseholdId]);
 
@@ -193,6 +204,8 @@ export function useInventory(): UseInventoryResult {
         }
         throw new Error(insertError.message);
       }
+
+      await scheduleExpiryNotification(payload.name.trim(), payload.expiryDate);
 
       await fetchItems();
     },
@@ -229,6 +242,12 @@ export function useInventory(): UseInventoryResult {
         }
         throw new Error(insertError.message);
       }
+
+      await Promise.all(
+        payloads.map((payload) =>
+          scheduleExpiryNotification(payload.name.trim(), payload.expiryDate),
+        ),
+      );
 
       await fetchItems();
     },

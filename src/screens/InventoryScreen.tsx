@@ -3,7 +3,6 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
-  KeyboardAvoidingView,
   LayoutAnimation,
   Modal,
   Platform,
@@ -12,13 +11,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   UIManager,
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Check,
@@ -32,9 +29,10 @@ import {
   Trash2,
   Moon,
 } from "lucide-react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ManualAddModal } from "../components/ManualAddModal";
+import { ScreenHeader } from "../components/ScreenHeader";
 import { useInventory } from "../hooks/useInventory";
 import { supabase } from "../lib/supabase";
 import {
@@ -88,6 +86,17 @@ const CATEGORY_LABELS_RU: Record<InventoryCategory, string> = {
   Beverages: "Напитки",
   Other: "Другое",
 };
+const CATEGORY_ICONS: Record<InventoryCategory, string> = {
+  Dairy: "🥛",
+  Meat: "🥩",
+  Vegetables: "🥦",
+  Fruits: "🍎",
+  Bakery: "🥐",
+  Frozen: "🧊",
+  Pantry: "🥫",
+  Beverages: "🥤",
+  Other: "🧺",
+};
 
 function normalizeCategory(category: string): InventoryCategory {
   return CATEGORY_NORMALIZE_MAP[category.trim().toLowerCase()] ?? "Other";
@@ -129,7 +138,9 @@ function InventoryRow({
       </View>
 
       <View style={styles.metaRow}>
-        <Text style={[styles.metaText, { color: palette.textMuted }]}>{getCategoryLabel(item.category)}</Text>
+        <Text style={[styles.metaText, { color: palette.textMuted }]}>
+          {CATEGORY_ICONS[item.category]} {getCategoryLabel(item.category)}
+        </Text>
         <Text style={[styles.metaText, { color: palette.textMuted }]}>Кол-во: {item.quantity}</Text>
       </View>
       <Text style={[styles.expiryText, { color: palette.textMuted }]}>Годен до: {item.expiry_date}</Text>
@@ -177,12 +188,6 @@ export default function InventoryScreen() {
   const [receiptItems, setReceiptItems] = useState<ParsedReceiptItem[]>([]);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editCategory, setEditCategory] = useState<InventoryCategory>("Dairy");
-  const [editExpiryDate, setEditExpiryDate] = useState(new Date());
-  const [isEditDatePickerOpen, setIsEditDatePickerOpen] = useState(false);
-  const [isUpdatingItem, setIsUpdatingItem] = useState(false);
-  const insets = useSafeAreaInsets();
   const { isDark, palette, toggleTheme } = useAppTheme();
   const cardBorderColor = isDark ? "#334155" : "#F1F5F9";
 
@@ -276,21 +281,6 @@ export default function InventoryScreen() {
 
   const openEditModal = (item: InventoryItem) => {
     setEditingItem(item);
-    setEditName(item.name);
-    setEditCategory(item.category);
-    setEditExpiryDate(new Date(item.expiry_date));
-  };
-
-  const closeEditModal = () => {
-    setEditingItem(null);
-    setIsEditDatePickerOpen(false);
-  };
-
-  const handleEditDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    setIsEditDatePickerOpen(false);
-    if (event.type === "set" && selectedDate) {
-      setEditExpiryDate(selectedDate);
-    }
   };
 
   const handleDeleteItem = (item: InventoryItem) => {
@@ -312,47 +302,22 @@ export default function InventoryScreen() {
     ]);
   };
 
-  const handleUpdateItem = async () => {
-    if (!editingItem || !editName.trim()) {
-      return;
-    }
-
-    try {
-      setIsUpdatingItem(true);
-      await updateItem(editingItem.id, {
-        name: editName.trim(),
-        category: editCategory,
-        expiryDate: editExpiryDate,
-        quantity: Math.max(1, editingItem.quantity),
-      });
-      closeEditModal();
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Не удалось обновить продукт.");
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setIsUpdatingItem(false);
-    }
-  };
-
   return (
     <SafeAreaView
       style={[
         styles.container,
         {
           backgroundColor: palette.bg,
-          paddingTop: Math.max(insets.top, 8),
-          paddingBottom: Math.max(insets.bottom, 10),
         },
       ]}
-      edges={["top", "left", "right", "bottom"]}
+      edges={["top", "left", "right"]}
     >
       <View style={styles.header}>
-        <View>
-          <Text style={[styles.title, { color: palette.text }]}>Мой Холодильник</Text>
-          <Text style={[styles.subtitle, { color: palette.textMuted }]}>Контроль свежести продуктов</Text>
-          <Text style={[styles.groupLabel, { color: palette.textMuted }]}>{householdLabel}</Text>
-        </View>
+        <ScreenHeader
+          title="Мой Холодильник"
+          subtitle="Контроль свежести продуктов"
+          familyLabel={householdLabel}
+        />
 
         <View style={styles.headerActions}>
           <Pressable style={[styles.iconButton, { borderColor: palette.border, backgroundColor: palette.card }]} onPress={() => reload()}>
@@ -423,6 +388,7 @@ export default function InventoryScreen() {
 
       {!isLoading && items.length > 0 ? (
         <FlatList
+          style={styles.listContainer}
           data={items}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
@@ -453,126 +419,47 @@ export default function InventoryScreen() {
         />
       ) : null}
 
-      <Pressable
-        style={[
-          styles.fab,
-          {
-            bottom: Math.max(insets.bottom + 8, 18),
-          },
-        ]}
-        onPress={() => setIsModalOpen(true)}
-      >
-        <Plus size={20} color="#FFFFFF" />
-      </Pressable>
-
       <ManualAddModal
-        visible={isModalOpen}
+        visible={isModalOpen || Boolean(editingItem)}
         onClose={() => {
           setSubmitError(null);
           setIsModalOpen(false);
+          setEditingItem(null);
         }}
         onSubmit={async (payload) => {
           try {
             setSubmitError(null);
-            await addItem(payload);
+            if (editingItem) {
+              await updateItem(editingItem.id, payload);
+            } else {
+              await addItem(payload);
+            }
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } catch (err) {
             setSubmitError(
-              err instanceof Error ? err.message : "Не удалось добавить продукт.",
+              err instanceof Error
+                ? err.message
+                : editingItem
+                  ? "Не удалось обновить продукт."
+                  : "Не удалось добавить продукт.",
             );
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           }
         }}
         onScanReceipt={handleScanReceipt}
         isAnalyzingReceipt={isAnalyzingReceipt}
+        mode={editingItem ? "edit" : "add"}
+        initialValues={
+          editingItem
+            ? {
+                name: editingItem.name,
+                category: editingItem.category,
+                quantity: editingItem.quantity,
+                expiryDate: new Date(editingItem.expiry_date),
+              }
+            : null
+        }
       />
-
-      <Modal
-        visible={Boolean(editingItem)}
-        transparent
-        animationType="slide"
-        onRequestClose={closeEditModal}
-      >
-        <View style={styles.summaryBackdrop}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
-            <View style={[styles.editCard, { backgroundColor: palette.card }]}>
-              <Text style={[styles.summaryTitle, { color: palette.text }]}>Редактировать продукт</Text>
-              <TextInput
-                value={editName}
-                onChangeText={setEditName}
-                placeholder="Название продукта"
-                placeholderTextColor={isDark ? "#94A3B8" : "#9CA3AF"}
-                style={[styles.input, { color: palette.text, borderColor: palette.border, backgroundColor: isDark ? "#0F172A" : "#FFFFFF" }]}
-              />
-
-              <Text style={[styles.label, { color: palette.textMuted }]}>Категория</Text>
-              <View style={styles.categoryWrap}>
-                {Object.keys(CATEGORY_LABELS_RU).map((category) => {
-                  const typedCategory = category as InventoryCategory;
-                  return (
-                    <Pressable
-                      key={typedCategory}
-                      style={[
-                        styles.categoryChip,
-                        { borderColor: palette.border, backgroundColor: isDark ? "#0F172A" : "#FFFFFF" },
-                        editCategory === typedCategory && styles.categoryChipActive,
-                        editCategory === typedCategory && { borderColor: palette.accent, backgroundColor: isDark ? "#1E293B" : "#FEE2E2" },
-                      ]}
-                      onPress={() => setEditCategory(typedCategory)}
-                    >
-                      <Text
-                        style={[
-                          styles.categoryText,
-                          editCategory === typedCategory && styles.categoryTextActive,
-                          { color: palette.textMuted },
-                          editCategory === typedCategory && { color: palette.text },
-                        ]}
-                      >
-                        {CATEGORY_LABELS_RU[typedCategory]}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Pressable style={[styles.dateButton, { borderColor: palette.border, backgroundColor: isDark ? "#0F172A" : "#FFFFFF" }]} onPress={() => setIsEditDatePickerOpen(true)}>
-                <Text style={[styles.dateText, { color: palette.text }]}>
-                  Годен до: {editExpiryDate.toISOString().slice(0, 10)}
-                </Text>
-              </Pressable>
-
-              {isEditDatePickerOpen ? (
-                <View style={[styles.datePickerWrap, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: palette.border }]}>
-                  <DateTimePicker
-                    value={editExpiryDate}
-                    mode="date"
-                    display={Platform.OS === "ios" ? "inline" : "default"}
-                    onChange={handleEditDateChange}
-                    minimumDate={new Date()}
-                    themeVariant={isDark ? "dark" : "light"}
-                    textColor={isDark ? "#F9FAFB" : "#111827"}
-                  />
-                </View>
-              ) : null}
-
-              <View style={styles.summaryActions}>
-                <Pressable style={styles.summaryCancel} onPress={closeEditModal}>
-                  <Text style={styles.summaryCancelText}>Отмена</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.summarySave, isUpdatingItem && styles.summarySaveDisabled]}
-                  onPress={handleUpdateItem}
-                  disabled={isUpdatingItem || !editName.trim()}
-                >
-                  <Text style={styles.summarySaveText}>
-                    {isUpdatingItem ? "Сохранение..." : "Сохранить"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
 
       <Modal
         visible={isSummaryOpen}
@@ -668,26 +555,10 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 16,
+    alignItems: "flex-start",
     gap: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: "#6B7280",
-    fontWeight: "500",
-  },
-  groupLabel: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: "600",
+    marginBottom: 8,
   },
   iconButton: {
     width: 40,
@@ -705,8 +576,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   list: {
-    paddingBottom: 116,
+    paddingBottom: 20,
     gap: 12,
+  },
+  listContainer: {
+    flex: 1,
   },
   card: {
     backgroundColor: "#FFFFFF",
@@ -880,21 +754,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 12,
-  },
-  fab: {
-    position: "absolute",
-    right: 18,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#E11D48",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
