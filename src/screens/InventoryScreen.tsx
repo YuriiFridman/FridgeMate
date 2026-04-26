@@ -142,7 +142,7 @@ const InventoryRow = memo(function InventoryRow({
           hitSlop={8}
         >
           <Trash2 size={16} color="#E11D48" />
-          <Text style={styles.deleteHintText}>Delete</Text>
+          <Text style={styles.deleteHintText}>Удалить</Text>
         </Pressable>
       </View>
 
@@ -406,7 +406,7 @@ export default function InventoryScreen() {
           onPress={() => setIsModalOpen(true)}
         >
           <Plus size={16} color={palette.text} />
-          <Text style={[styles.manualAddButtonText, { color: palette.text }]}>Manual Add</Text>
+          <Text style={[styles.manualAddButtonText, { color: palette.text }]}>Добавить продукты</Text>
         </Pressable>
         ) : null}
 
