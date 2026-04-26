@@ -88,7 +88,11 @@ export function useInventory(): UseInventoryResult {
       return;
     }
 
-    const householdId = await getCurrentUserHouseholdId();
+    let householdId = await getCurrentUserHouseholdId();
+    if (!householdId && source === "manual") {
+      // Recovery path: create missing profile/household for auth user.
+      householdId = await ensureCurrentUserSetup().catch(() => null);
+    }
 
     if (!householdId) {
       if (requestId !== fetchRequestRef.current) return;

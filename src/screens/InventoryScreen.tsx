@@ -385,6 +385,11 @@ export default function InventoryScreen() {
           </Pressable>
         </View>
         ) : null}
+        {submitError ? (
+          <View style={[styles.errorCard, { borderColor: "#FCA5A5", backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>
+            <Text style={styles.errorText}>{submitError}</Text>
+          </View>
+        ) : null}
         {emptyState ? (
         <View style={[styles.emptyCard, { backgroundColor: palette.card, borderColor: cardBorderColor }]}>
           <View style={[styles.emptyIconWrap, { backgroundColor: isDark ? "#1E293B" : "#F3F4F6" }]}>

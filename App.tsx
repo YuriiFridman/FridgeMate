@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { supabase } from "./src/lib/supabase";
 import { AppThemeProvider, useAppTheme } from "./src/theme/appTheme";
-import { clearCachedHouseholdId } from "./src/lib/userSetup";
+import { clearCachedHouseholdId, ensureCurrentUserSetup } from "./src/lib/userSetup";
 import { validateRuntimeEnv } from "./src/lib/env";
 
 const Tab = createBottomTabNavigator();
@@ -33,6 +33,11 @@ function AppContent() {
         data: { session: initialSession },
       } = await supabase.auth.getSession();
 
+      if (initialSession?.user?.id) {
+        // Ensure profile/household row exists for legacy auth users.
+        await ensureCurrentUserSetup().catch(() => {});
+      }
+
       if (!isMounted) return;
 
       setSession(initialSession ?? null);
@@ -48,6 +53,9 @@ function AppContent() {
         const nextUserId = nextSession?.user?.id;
         if (previousUserId && previousUserId !== nextUserId) {
           await clearCachedHouseholdId(previousUserId);
+        }
+        if (nextUserId) {
+          await ensureCurrentUserSetup().catch(() => {});
         }
         currentUserIdRef.current = nextUserId ?? null;
         setSession(nextSession ?? null);
@@ -103,6 +111,9 @@ function AppContent() {
                 tabBarStyle: {
                   borderTopColor: palette.border,
                   backgroundColor: palette.card,
+                  marginBottom: 6,
+                  height: 62,
+                  paddingBottom: 6,
                 },
                 tabBarIcon: ({ color, size }) => {
                   let iconName: keyof typeof MaterialCommunityIcons.glyphMap = "fridge-variant";
