@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import type { Session } from "@supabase/supabase-js";
 import { DarkTheme, DefaultTheme, NavigationContainer } from "@react-navigation/native";
@@ -6,23 +6,27 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import { supabase } from "./src/lib/supabase";
-import AuthScreen from "./src/screens/AuthScreen";
-import InventoryScreen from "./src/screens/InventoryScreen";
-import RecipeScreen from "./src/screens/RecipeScreen";
-import EventsScreen from "./src/screens/EventsScreen";
-import ShoppingScreen from "./src/screens/ShoppingScreen";
-import ProfileScreen from "./src/screens/ProfileScreen";
 import { AppThemeProvider, useAppTheme } from "./src/theme/appTheme";
+import { clearCachedHouseholdId } from "./src/lib/userSetup";
+import { validateRuntimeEnv } from "./src/lib/env";
 
 const Tab = createBottomTabNavigator();
+const AuthScreen = lazy(() => import("./src/screens/AuthScreen"));
+const InventoryScreen = lazy(() => import("./src/screens/InventoryScreen"));
+const RecipeScreen = lazy(() => import("./src/screens/RecipeScreen"));
+const EventsScreen = lazy(() => import("./src/screens/EventsScreen"));
+const ShoppingScreen = lazy(() => import("./src/screens/ShoppingScreen"));
+const ProfileScreen = lazy(() => import("./src/screens/ProfileScreen"));
 
 function AppContent() {
   const [session, setSession] = useState<Session | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const { isDark, palette } = useAppTheme();
+  const currentUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
+    validateRuntimeEnv();
 
     const bootstrap = async () => {
       const {
@@ -32,6 +36,7 @@ function AppContent() {
       if (!isMounted) return;
 
       setSession(initialSession ?? null);
+      currentUserIdRef.current = initialSession?.user?.id ?? null;
       setIsBootstrapping(false);
     };
 
@@ -39,6 +44,12 @@ function AppContent() {
 
     const { data: listener } = supabase.auth.onAuthStateChange(
       async (_event, nextSession) => {
+        const previousUserId = currentUserIdRef.current;
+        const nextUserId = nextSession?.user?.id;
+        if (previousUserId && previousUserId !== nextUserId) {
+          await clearCachedHouseholdId(previousUserId);
+        }
+        currentUserIdRef.current = nextUserId ?? null;
         setSession(nextSession ?? null);
       },
     );
@@ -83,34 +94,38 @@ function AppContent() {
                 }
           }
         >
-          <Tab.Navigator
-            screenOptions={({ route }) => ({
-              headerShown: false,
-              tabBarActiveTintColor: palette.accent,
-              tabBarInactiveTintColor: palette.textMuted,
-              tabBarStyle: {
-                borderTopColor: palette.border,
-                backgroundColor: palette.card,
-              },
-              tabBarIcon: ({ color, size }) => {
-                let iconName: keyof typeof MaterialCommunityIcons.glyphMap = "fridge-variant";
-                if (route.name === "Рецепты") iconName = "chef-hat";
-                if (route.name === "Посиделки") iconName = "account-group";
-                if (route.name === "Покупки") iconName = "cart";
-                if (route.name === "Профиль") iconName = "account-circle";
-                return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
-              },
-            })}
-          >
-            <Tab.Screen name="Холодильник" component={InventoryScreen} />
-            <Tab.Screen name="Рецепты" component={RecipeScreen} />
-            <Tab.Screen name="Посиделки" component={EventsScreen} />
-            <Tab.Screen name="Покупки" component={ShoppingScreen} />
-            <Tab.Screen name="Профиль" component={ProfileScreen} />
-          </Tab.Navigator>
+          <Suspense fallback={null}>
+            <Tab.Navigator
+              screenOptions={({ route }) => ({
+                headerShown: false,
+                tabBarActiveTintColor: palette.accent,
+                tabBarInactiveTintColor: palette.textMuted,
+                tabBarStyle: {
+                  borderTopColor: palette.border,
+                  backgroundColor: palette.card,
+                },
+                tabBarIcon: ({ color, size }) => {
+                  let iconName: keyof typeof MaterialCommunityIcons.glyphMap = "fridge-variant";
+                  if (route.name === "Рецепты") iconName = "chef-hat";
+                  if (route.name === "Посиделки") iconName = "account-group";
+                  if (route.name === "Покупки") iconName = "cart";
+                  if (route.name === "Профиль") iconName = "account-circle";
+                  return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
+                },
+              })}
+            >
+              <Tab.Screen name="Холодильник" component={InventoryScreen} />
+              <Tab.Screen name="Рецепты" component={RecipeScreen} />
+              <Tab.Screen name="Посиделки" component={EventsScreen} />
+              <Tab.Screen name="Покупки" component={ShoppingScreen} />
+              <Tab.Screen name="Профиль" component={ProfileScreen} />
+            </Tab.Navigator>
+          </Suspense>
         </NavigationContainer>
       ) : (
-        <AuthScreen onAuthSuccess={async () => Promise.resolve()} />
+        <Suspense fallback={null}>
+          <AuthScreen onAuthSuccess={async () => Promise.resolve()} />
+        </Suspense>
       )}
     </SafeAreaProvider>
   );

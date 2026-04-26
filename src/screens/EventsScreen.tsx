@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   useWindowDimensions,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,9 +15,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppCard } from "../components/AppCard";
 import { CircleCheck } from "../components/CircleCheck";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { trackEvent } from "../lib/telemetry";
+import {
+  buildEventChecklist,
+  categorizeShoppingItems,
+  estimateBudgetBand,
+  type EventChecklistItem,
+} from "../features/smartPlanning";
 import { getFamilyContext } from "../lib/family";
-import { supabase } from "../lib/supabase";
+import { addShoppingItems } from "../repositories/shoppingRepository";
 import {
   compareIngredientsWithInventory,
   generateEventMenu,
@@ -32,7 +40,7 @@ function extractJson(text: string): string {
 }
 
 export default function EventsScreen() {
-  const { palette } = useAppTheme();
+  const { palette, spacing } = useAppTheme();
   const { width } = useWindowDimensions();
   const { items, householdLabel } = useInventory();
   const isCompactLayout = width < 760;
@@ -40,6 +48,8 @@ export default function EventsScreen() {
   const [menu, setMenu] = useState<EventDish[]>([]);
   const [selectedTitles, setSelectedTitles] = useState<string[]>([]);
   const [missingResult, setMissingResult] = useState<string[]>([]);
+  const [checklist, setChecklist] = useState<EventChecklistItem[]>([]);
+  const [budget, setBudget] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBuildingList, setIsBuildingList] = useState(false);
 
@@ -49,7 +59,12 @@ export default function EventsScreen() {
     setIsGenerating(true);
     try {
       const generated = await generateEventMenu(Number(peopleCount) || 1);
+      trackEvent("events_menu_generated", {
+        peopleCount: Math.max(1, Number(peopleCount) || 1),
+        dishes: generated.length,
+      });
       setMenu(generated);
+      setChecklist(buildEventChecklist(Number(peopleCount) || 1));
       setSelectedTitles([]);
       setMissingResult([]);
       if (generated.length === 0) {
@@ -114,23 +129,28 @@ export default function EventsScreen() {
         ingredients.length > 0 ? ingredients : selectedTitles,
         inventoryNames,
       );
-      setMissingResult(diff.missing);
+      const categorized = categorizeShoppingItems(diff.missing);
+      setMissingResult(Object.values(categorized).flat());
 
       const family = await getFamilyContext();
       if (family && diff.missing.length > 0) {
-        const { error } = await supabase.from("shopping_items").insert(
-          diff.missing.map((title) => ({
-            family_id: family.familyId, // family_id filter is used by design.
-            title,
-            is_bought: false,
-            source: "events",
-          })),
-        );
-        if (error) {
-          Alert.alert("Ошибка", `Не удалось отправить в покупки: ${error.message}`);
+        try {
+          await addShoppingItems(
+            diff.missing.map((title) => ({
+              familyId: family.familyId,
+              title,
+              source: "events",
+            })),
+          );
+        } catch (error) {
+          Alert.alert(
+            "Ошибка",
+            `Не удалось отправить в покупки: ${error instanceof Error ? error.message : "неизвестная ошибка"}`,
+          );
           return;
         }
         Alert.alert("Готово", "Список покупок обновлен.");
+        trackEvent("events_shopping_sync", { missingCount: diff.missing.length });
       } else if (!family) {
         Alert.alert("Ошибка", "Не найдена family context.");
       } else {
@@ -144,8 +164,9 @@ export default function EventsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
-      <ScreenHeader title="Посиделки" subtitle="Праздничное меню и закупка" familyLabel={householdLabel} />
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "left", "right"]}>
+      <ScreenContainer style={{ gap: spacing.sm }}>
+        <ScreenHeader title="Посиделки" subtitle="Праздничное меню и закупка" familyLabel={householdLabel} />
 
       <View style={[styles.row, isCompactLayout && styles.rowCompact]}>
         <TextInput
@@ -160,21 +181,48 @@ export default function EventsScreen() {
             { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
           ]}
         />
+        <TextInput
+          value={budget}
+          onChangeText={setBudget}
+          keyboardType="numeric"
+          placeholder={`Бюджет (€), напр. ${estimateBudgetBand(Number(peopleCount) || 1).min}`}
+          placeholderTextColor={palette.textMuted}
+          style={[
+            styles.input,
+            isCompactLayout && styles.inputCompact,
+            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
+          ]}
+        />
         <View style={[styles.generateWrap, isCompactLayout && styles.generateWrapCompact]}>
           <PrimaryButton label="Сгенерировать" onPress={generateMenu} loading={isGenerating} />
         </View>
       </View>
+      <AppCard style={styles.budgetCard}>
+        <Text style={[styles.budgetTitle, { color: palette.text }]}>Smart Budget</Text>
+        <Text style={{ color: palette.textMuted }}>
+          Рекомендуемый диапазон на {Math.max(1, Number(peopleCount) || 1)} чел.:{" "}
+          {estimateBudgetBand(Number(peopleCount) || 1).min}€ -{" "}
+          {estimateBudgetBand(Number(peopleCount) || 1).max}€
+        </Text>
+        {budget ? (
+          <Text style={{ color: palette.textMuted }}>
+            Введенный бюджет: {Math.max(0, Number(budget) || 0)}€
+          </Text>
+        ) : null}
+      </AppCard>
 
-      <ScrollView contentContainerStyle={styles.list}>
-        {menu.map((dish) => {
+        <FlatList
+        data={menu}
+        keyExtractor={(dish) => dish.title}
+        contentContainerStyle={styles.list}
+        renderItem={({ item: dish }) => {
           const selected = selectedTitles.includes(dish.title);
           return (
             <Pressable
-              key={dish.title}
               style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressablePressed]}
               onPress={() =>
                 setSelectedTitles((prev) =>
-                  selected ? prev.filter((item) => item !== dish.title) : [...prev, dish.title],
+                  selected ? prev.filter((entry) => entry !== dish.title) : [...prev, dish.title],
                 )
               }
             >
@@ -187,32 +235,55 @@ export default function EventsScreen() {
               </AppCard>
             </Pressable>
           );
-        })}
-
-        <PrimaryButton
-          label="Собрать ингредиенты и отправить в Покупки"
-          onPress={buildShoppingList}
-          loading={isBuildingList}
-          disabled={selectedTitles.length === 0}
+        }}
+        ListFooterComponent={
+          <View style={styles.footerWrap}>
+            <PrimaryButton
+              label="Собрать ингредиенты и отправить в Покупки"
+              onPress={buildShoppingList}
+              loading={isBuildingList}
+              disabled={selectedTitles.length === 0}
+            />
+            {missingResult.length > 0 ? (
+              <AppCard style={styles.resultCard}>
+                <Text style={[styles.resultTitle, { color: palette.text }]}>Нужно докупить:</Text>
+                {missingResult.map((item) => (
+                  <Text key={item} style={{ color: palette.textMuted }}>
+                    - {item}
+                  </Text>
+                ))}
+              </AppCard>
+            ) : null}
+            {checklist.length > 0 ? (
+              <AppCard style={styles.resultCard}>
+                <Text style={[styles.resultTitle, { color: palette.text }]}>Чеклист подготовки</Text>
+                {checklist.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={styles.checklistRow}
+                    onPress={() =>
+                      setChecklist((prev) =>
+                        prev.map((entry) =>
+                          entry.id === item.id ? { ...entry, done: !entry.done } : entry,
+                        ),
+                      )
+                    }
+                  >
+                    <CircleCheck checked={item.done} />
+                    <Text style={{ color: palette.textMuted }}>{item.title}</Text>
+                  </Pressable>
+                ))}
+              </AppCard>
+            ) : null}
+          </View>
+        }
         />
-
-        {missingResult.length > 0 ? (
-          <AppCard style={styles.resultCard}>
-            <Text style={[styles.resultTitle, { color: palette.text }]}>Нужно докупить:</Text>
-            {missingResult.map((item) => (
-              <Text key={item} style={{ color: palette.textMuted }}>
-                - {item}
-              </Text>
-            ))}
-          </AppCard>
-        ) : null}
-      </ScrollView>
+      </ScreenContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, width: "100%", maxWidth: 960, alignSelf: "center", paddingHorizontal: 16 },
   row: { flexDirection: "row", gap: 8, marginBottom: 10 },
   rowCompact: { flexDirection: "column" },
   input: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
@@ -226,6 +297,10 @@ const styles = StyleSheet.create({
   cardTitleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "700" },
   cardSubtitle: { fontSize: 13, fontWeight: "500" },
+  budgetCard: { gap: 6, marginBottom: 8 },
+  budgetTitle: { fontWeight: "700" },
+  footerWrap: { gap: 8 },
   resultCard: { marginTop: 8, gap: 4 },
   resultTitle: { fontWeight: "700", marginBottom: 4 },
+  checklistRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 });

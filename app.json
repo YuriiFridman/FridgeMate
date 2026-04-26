@@ -12,7 +12,7 @@
       "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": [
-      "**/*"
+      "**/*.{png,jpg,jpeg,webp,json}"
     ],
     "web": {
       "favicon": "./48x48.png"

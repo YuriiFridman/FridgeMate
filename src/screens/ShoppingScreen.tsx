@@ -14,8 +14,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AppCard } from "../components/AppCard";
 import { CircleCheck } from "../components/CircleCheck";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { getFamilyContext } from "../lib/family";
+import { trackEvent } from "../lib/telemetry";
+import {
+  addShoppingItem,
+  clearBoughtShoppingItems,
+  getShoppingItems,
+  updateShoppingBought,
+} from "../repositories/shoppingRepository";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "../theme/appTheme";
 
@@ -28,7 +36,7 @@ interface ShoppingItem {
 }
 
 export default function ShoppingScreen() {
-  const { palette } = useAppTheme();
+  const { palette, spacing } = useAppTheme();
   const { width } = useWindowDimensions();
   const isCompactLayout = width < 760;
   const [items, setItems] = useState<ShoppingItem[]>([]);
@@ -66,22 +74,15 @@ export default function ShoppingScreen() {
     setFamilyId(family.familyId);
     setFamilyLabel(`Family: ${family.familyName}`);
 
-    const { data, error } = await supabase
-      .from("shopping_items")
-      .select("*")
-      .eq("family_id", family.familyId)
-      .order("is_bought", { ascending: true })
-      .order("created_at", { ascending: false });
-
-    if (error) {
+    try {
+      const data = await getShoppingItems(family.familyId);
+      setItems(sortItems(data as ShoppingItem[]));
+      if (showSpinner) setIsLoading(false);
+      setHasLoadedOnce(true);
+    } catch {
       setItems([]);
       if (showSpinner) setIsLoading(false);
-      return;
     }
-
-    setItems(sortItems((data ?? []) as ShoppingItem[]));
-    if (showSpinner) setIsLoading(false);
-    setHasLoadedOnce(true);
   }, []);
 
   useEffect(() => {
@@ -113,17 +114,13 @@ export default function ShoppingScreen() {
 
   const addManualItem = async () => {
     if (!familyId || !manualTitle.trim()) return;
-    const payload = {
-      family_id: familyId,
-      title: manualTitle.trim(),
-      is_bought: false,
-      source: "manual",
-    };
-    const { error } = await supabase.from("shopping_items").insert(payload);
-    if (error) {
+    try {
+      await addShoppingItem({ familyId, title: manualTitle.trim(), source: "manual" });
+    } catch {
       return;
     }
     setManualTitle("");
+    trackEvent("shopping_item_added", { titleLength: manualTitle.trim().length });
     await loadItems(false);
   };
 
@@ -135,12 +132,10 @@ export default function ShoppingScreen() {
         ),
       ),
     );
-    const { error } = await supabase
-      .from("shopping_items")
-      .update({ is_bought: !item.is_bought })
-      .eq("id", item.id)
-      .eq("family_id", item.family_id);
-    if (error) {
+    try {
+      await updateShoppingBought(item.id, item.family_id, !item.is_bought);
+      trackEvent("shopping_item_toggled", { isBought: !item.is_bought });
+    } catch {
       setItems((prev) =>
         sortItems(
           prev.map((entry) =>
@@ -148,27 +143,25 @@ export default function ShoppingScreen() {
           ),
         ),
       );
-      return;
     }
   };
 
   const clearBoughtItems = async () => {
     if (!familyId) return;
-    const { error } = await supabase
-      .from("shopping_items")
-      .delete()
-      .eq("family_id", familyId)
-      .eq("is_bought", true);
-    if (error) {
+    try {
+      await clearBoughtShoppingItems(familyId);
+      trackEvent("shopping_cleared_bought");
+    } catch {
       return;
     }
     await loadItems(false);
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
-      <ScreenHeader title="Покупки" subtitle="Список того, что нужно купить" familyLabel={familyLabel} />
-      <View style={[styles.addRow, isCompactLayout && styles.addRowCompact]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "left", "right"]}>
+      <ScreenContainer style={{ gap: spacing.sm }}>
+        <ScreenHeader title="Покупки" subtitle="Список того, что нужно купить" familyLabel={familyLabel} />
+        <View style={[styles.addRow, isCompactLayout && styles.addRowCompact]}>
         <TextInput
           value={manualTitle}
           onChangeText={setManualTitle}
@@ -183,42 +176,42 @@ export default function ShoppingScreen() {
         <View style={[styles.addButtonWrap, isCompactLayout && styles.addButtonWrapCompact]}>
           <PrimaryButton label="Добавить" onPress={addManualItem} />
         </View>
-      </View>
-      <Pressable style={[styles.clearButton, { borderColor: palette.border }]} onPress={clearBoughtItems}>
-        <Text style={[styles.clearButtonText, { color: palette.text }]}>Очистить отмеченные</Text>
-      </Pressable>
+        </View>
+        <Pressable style={[styles.clearButton, { borderColor: palette.border }]} onPress={clearBoughtItems}>
+          <Text style={[styles.clearButtonText, { color: palette.text }]}>Очистить отмеченные</Text>
+        </Pressable>
 
-      {isLoading && !hasLoadedOnce ? <ActivityIndicator color={palette.accent} /> : null}
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [styles.itemPressable, pressed && styles.itemPressablePressed]}
-            onPress={() => toggleBought(item)}
-          >
-            <AppCard style={styles.item}>
-              <CircleCheck checked={item.is_bought} />
-              <Text
-                style={[
-                  styles.itemText,
-                  { color: palette.text },
-                  item.is_bought && styles.itemTextBought,
-                ]}
-              >
-                {item.title}
-              </Text>
-            </AppCard>
-          </Pressable>
-        )}
-      />
+        {isLoading && !hasLoadedOnce ? <ActivityIndicator color={palette.accent} /> : null}
+        <FlatList
+          data={items}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [styles.itemPressable, pressed && styles.itemPressablePressed]}
+              onPress={() => toggleBought(item)}
+            >
+              <AppCard style={styles.item}>
+                <CircleCheck checked={item.is_bought} />
+                <Text
+                  style={[
+                    styles.itemText,
+                    { color: palette.text },
+                    item.is_bought && styles.itemTextBought,
+                  ]}
+                >
+                  {item.title}
+                </Text>
+              </AppCard>
+            </Pressable>
+          )}
+        />
+      </ScreenContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, width: "100%", maxWidth: 960, alignSelf: "center", paddingHorizontal: 16 },
   addRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
   addRowCompact: { flexDirection: "column" },
   input: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },

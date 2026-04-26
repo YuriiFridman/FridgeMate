@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  ListRenderItem,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,6 +24,7 @@ import {
   type WeeklyPlanDay,
 } from "../services/aiService";
 import { useAppTheme } from "../theme/appTheme";
+import { deleteInventoryItems } from "../repositories/inventoryRepository";
 
 function normalizeFoodName(value: string) {
   return value
@@ -42,7 +53,7 @@ function isIngredientMatchedToItem(ingredient: string, itemName: string) {
 }
 
 export default function RecipeScreen() {
-  const { items, reload, deleteItem, householdLabel } = useInventory();
+  const { items, reload, householdLabel } = useInventory();
   const { isDark, palette } = useAppTheme();
   const [recipes, setRecipes] = useState<GeneratedRecipe[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([]);
@@ -106,11 +117,79 @@ export default function RecipeScreen() {
           text: "Удалить",
           style: "destructive",
           onPress: async () => {
-            await Promise.all(usedItems.map((item) => deleteItem(item.id)));
+            await deleteInventoryItems(usedItems.map((item) => item.id));
             await reload();
           },
         },
       ],
+    );
+  };
+
+  const feedData = useMemo(
+    () =>
+      [
+        ...(weeklyPlan.length > 0 ? [{ type: "plan" as const }] : []),
+        ...recipes.map((recipe, index) => ({
+          type: "recipe" as const,
+          recipe,
+          key: `${recipe.title}-${index}`,
+        })),
+        ...(!isGenerating && recipes.length === 0 ? [{ type: "empty" as const }] : []),
+      ] as const,
+    [isGenerating, recipes, weeklyPlan.length],
+  );
+
+  const renderFeedItem: ListRenderItem<(typeof feedData)[number]> = ({ item }) => {
+    if (item.type === "plan") {
+      return (
+        <AppCard style={styles.planCard}>
+          <Text style={[styles.planTitle, { color: palette.text }]}>План ужинов на неделю</Text>
+          {weeklyPlan.map((entry, index) => (
+            <View key={`${entry.day}-${index}`} style={[styles.planRow, { borderBottomColor: palette.border }]}>
+              <Text style={[styles.planDay, { color: palette.accent }]}>{entry.day}</Text>
+              <Text style={[styles.planDish, { color: palette.text }]}>{entry.title}</Text>
+              <Text style={[styles.planReason, { color: palette.textMuted }]}>{entry.reason}</Text>
+              <Text style={[styles.planTime, { color: palette.textMuted }]}>{entry.time}</Text>
+            </View>
+          ))}
+        </AppCard>
+      );
+    }
+    if (item.type === "empty") {
+      return (
+        <AppCard style={styles.emptyCard}>
+          <MaterialCommunityIcons name="book-open-page-variant" size={24} color={palette.textMuted} />
+          <Text style={[styles.emptyTitle, { color: palette.text }]}>Пока нет рецептов</Text>
+          <Text style={[styles.emptySubtitle, { color: palette.textMuted }]}>Нажмите кнопку выше, чтобы получить 3 идеи из ваших продуктов.</Text>
+        </AppCard>
+      );
+    }
+    return (
+      <AppCard
+        key={item.key}
+        style={[
+          styles.recipeCard,
+          {
+            borderColor: isDark ? "#334155" : "#F1F5F9",
+            backgroundColor: palette.card,
+          },
+        ]}
+      >
+        <View style={styles.recipeTitleRow}>
+          <MaterialCommunityIcons name="food-variant" size={18} color={palette.accent} />
+          <Text style={[styles.recipeTitle, { color: palette.text }]}>{item.recipe.title}</Text>
+        </View>
+        <Text style={[styles.sectionLabel, { color: isDark ? "#E2E8F0" : "#374151" }]}>Ингредиенты</Text>
+        {item.recipe.ingredients.map((ingredient, ingredientIndex) => (
+          <Text key={`${ingredient}-${ingredientIndex}`} style={[styles.recipeLine, { color: palette.textMuted }]}>
+            - {ingredient}
+          </Text>
+        ))}
+        <Text style={[styles.timeBadge, { color: palette.accent }]}>Время: {item.recipe.time}</Text>
+        <Text style={[styles.sectionLabel, { color: isDark ? "#E2E8F0" : "#374151" }]}>Шаги</Text>
+        <Text style={[styles.recipeLine, { color: palette.textMuted }]}>{item.recipe.steps}</Text>
+        <PrimaryButton label="Приготовил(а)" onPress={() => handleCooked(item.recipe)} />
+      </AppCard>
     );
   };
 
@@ -156,9 +235,17 @@ export default function RecipeScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
+      <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
+        data={feedData}
+        keyExtractor={(item, index) =>
+          item.type === "recipe" ? item.key : `${item.type}-${index}`
+        }
+        renderItem={renderFeedItem}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -174,65 +261,15 @@ export default function RecipeScreen() {
         }
       >
         {error ? <Text style={[styles.errorText, { backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>{error}</Text> : null}
-        {isGenerating ? (
-          <AppCard style={styles.loadingCard}>
-            <ActivityIndicator size="large" color={palette.accent} />
-            <Text style={[styles.loadingText, { color: palette.textMuted }]}>
-              ИИ думает над рецептами...
-            </Text>
-          </AppCard>
-        ) : null}
-        {weeklyPlan.length > 0 ? (
-          <AppCard style={styles.planCard}>
-            <Text style={[styles.planTitle, { color: palette.text }]}>План ужинов на неделю</Text>
-            {weeklyPlan.map((entry, index) => (
-              <View
-                key={`${entry.day}-${index}`}
-                style={[styles.planRow, { borderBottomColor: palette.border }]}
-              >
-                <Text style={[styles.planDay, { color: palette.accent }]}>{entry.day}</Text>
-                <Text style={[styles.planDish, { color: palette.text }]}>{entry.title}</Text>
-                <Text style={[styles.planReason, { color: palette.textMuted }]}>{entry.reason}</Text>
-                <Text style={[styles.planTime, { color: palette.textMuted }]}>{entry.time}</Text>
-              </View>
-            ))}
-          </AppCard>
-        ) : null}
-        {recipes.map((recipe, index) => (
-          <AppCard
-            key={`${recipe.title}-${index}`}
-            style={[
-              styles.recipeCard,
-              {
-                borderColor: isDark ? "#334155" : "#F1F5F9",
-                backgroundColor: palette.card,
-              },
-            ]}
-          >
-            <View style={styles.recipeTitleRow}>
-              <MaterialCommunityIcons name="food-variant" size={18} color={palette.accent} />
-              <Text style={[styles.recipeTitle, { color: palette.text }]}>{recipe.title}</Text>
-            </View>
-            <Text style={[styles.sectionLabel, { color: isDark ? "#E2E8F0" : "#374151" }]}>Ингредиенты</Text>
-            {recipe.ingredients.map((ingredient, ingredientIndex) => (
-              <Text key={`${ingredient}-${ingredientIndex}`} style={[styles.recipeLine, { color: palette.textMuted }]}>
-                - {ingredient}
-              </Text>
-            ))}
-            <Text style={[styles.timeBadge, { color: palette.accent }]}>Время: {recipe.time}</Text>
-            <Text style={[styles.sectionLabel, { color: isDark ? "#E2E8F0" : "#374151" }]}>Шаги</Text>
-            <Text style={[styles.recipeLine, { color: palette.textMuted }]}>{recipe.steps}</Text>
-            <PrimaryButton label="Приготовил(а)" onPress={() => handleCooked(recipe)} />
-          </AppCard>
-        ))}
-        {!isGenerating && recipes.length === 0 ? (
-          <AppCard style={styles.emptyCard}>
-            <MaterialCommunityIcons name="book-open-page-variant" size={24} color={palette.textMuted} />
-            <Text style={[styles.emptyTitle, { color: palette.text }]}>Пока нет рецептов</Text>
-            <Text style={[styles.emptySubtitle, { color: palette.textMuted }]}>Нажмите кнопку выше, чтобы получить 3 идеи из ваших продуктов.</Text>
-          </AppCard>
-        ) : null}
-      </ScrollView>
+        ListHeaderComponent={
+          isGenerating ? (
+            <AppCard style={styles.loadingCard}>
+              <ActivityIndicator size="large" color={palette.accent} />
+              <Text style={[styles.loadingText, { color: palette.textMuted }]}>ИИ думает над рецептами...</Text>
+            </AppCard>
+          ) : null
+        }
+      />
     </SafeAreaView>
   );
 }

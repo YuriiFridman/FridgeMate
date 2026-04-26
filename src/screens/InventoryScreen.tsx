@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   ActivityIndicator,
@@ -106,7 +106,7 @@ function getCategoryLabel(category: InventoryCategory): string {
   return CATEGORY_LABELS_RU[category];
 }
 
-function InventoryRow({
+const InventoryRow = memo(function InventoryRow({
   item,
   onPress,
   onDelete,
@@ -164,7 +164,7 @@ function InventoryRow({
       <Text style={[styles.remainingText, { color: palette.textMuted }]}>{remainingLabel}</Text>
     </Pressable>
   );
-}
+});
 
 export default function InventoryScreen() {
   const {
@@ -282,6 +282,18 @@ export default function InventoryScreen() {
   const openEditModal = (item: InventoryItem) => {
     setEditingItem(item);
   };
+  const renderInventoryItem = useCallback(
+    ({ item }: { item: InventoryItem }) => (
+      <InventoryRow
+        item={item}
+        onPress={() => openEditModal(item)}
+        onDelete={() => handleDeleteItem(item)}
+        palette={palette}
+        isDark={isDark}
+      />
+    ),
+    [isDark, palette],
+  );
 
   const handleDeleteItem = (item: InventoryItem) => {
     Alert.alert("Подтверждение", "Удалить этот продукт из холодильника?", [
@@ -392,15 +404,11 @@ export default function InventoryScreen() {
           data={items}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <InventoryRow
-              item={item}
-              onPress={() => openEditModal(item)}
-              onDelete={() => handleDeleteItem(item)}
-              palette={palette}
-              isDark={isDark}
-            />
-          )}
+          renderItem={renderInventoryItem}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={7}
+          removeClippedSubviews={Platform.OS !== "web"}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}

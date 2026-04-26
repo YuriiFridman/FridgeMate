@@ -10,7 +10,10 @@
     "web": "expo start --web",
     "web:build": "expo export --platform web",
     "web:preview": "npx serve dist -l 4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "smoke:web": "node ./scripts/smoke-web.mjs",
+    "perf:budget": "node ./scripts/check-web-budget.mjs",
+    "ci:web": "npm run web:build && npm run smoke:web && npm run perf:budget"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
 
 import { useAppTheme } from "../theme/appTheme";
 
@@ -14,7 +14,7 @@ export function ScreenHeader({ title, subtitle, familyLabel }: ScreenHeaderProps
   return (
     <View style={styles.header}>
       <View style={styles.titleRow}>
-        <View style={[styles.accentDot, { backgroundColor: palette.accent }]} />
+        <Image source={require("../../48x48.png")} style={styles.logo} resizeMode="contain" />
         <Text style={[styles.title, { color: palette.text }]}>{title}</Text>
       </View>
       {subtitle ? <Text style={[styles.subtitle, { color: palette.textMuted }]}>{subtitle}</Text> : null}
@@ -39,10 +39,10 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
-  accentDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  logo: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
   },
   title: {
     fontSize: 24,

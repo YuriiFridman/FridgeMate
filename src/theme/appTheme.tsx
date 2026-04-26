@@ -13,10 +13,35 @@ interface ThemePalette {
   overlay: string;
 }
 
+interface ThemeSpacing {
+  xs: number;
+  sm: number;
+  md: number;
+  lg: number;
+  xl: number;
+}
+
+interface ThemeRadius {
+  sm: number;
+  md: number;
+  lg: number;
+  pill: number;
+}
+
+interface ThemeTypography {
+  title: number;
+  subtitle: number;
+  body: number;
+  caption: number;
+}
+
 interface AppThemeContextValue {
   mode: ThemeMode;
   isDark: boolean;
   palette: ThemePalette;
+  spacing: ThemeSpacing;
+  radius: ThemeRadius;
+  typography: ThemeTypography;
   toggleTheme: () => void;
 }
 
@@ -40,6 +65,28 @@ const darkPalette: ThemePalette = {
   border: "#334155",
   accent: "#F43F5E",
   overlay: "rgba(2, 6, 23, 0.74)",
+};
+
+const spacing: ThemeSpacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+};
+
+const radius: ThemeRadius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  pill: 999,
+};
+
+const typography: ThemeTypography = {
+  title: 24,
+  subtitle: 16,
+  body: 14,
+  caption: 12,
 };
 
 const AppThemeContext = createContext<AppThemeContextValue | undefined>(undefined);
@@ -70,6 +117,9 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       mode,
       isDark: mode === "dark",
       palette: mode === "dark" ? darkPalette : lightPalette,
+      spacing,
+      radius,
+      typography,
       toggleTheme,
     }),
     [mode],

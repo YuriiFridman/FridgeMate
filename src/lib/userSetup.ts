@@ -1,5 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getProfileByUserId, upsertProfile } from "../repositories/profileRepository";
 import { supabase } from "./supabase";
+import { withRetry } from "./retry";
 
 interface ProfileRow {
   id: string;
@@ -12,7 +14,11 @@ interface HouseholdRow {
   id: string;
 }
 
-const HOUSEHOLD_CACHE_KEY = "fridgemate.household_id";
+const HOUSEHOLD_CACHE_PREFIX = "fridgemate.household_id";
+
+function householdCacheKey(userId: string): string {
+  return `${HOUSEHOLD_CACHE_PREFIX}.${userId}`;
+}
 
 function extractDbErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -27,12 +33,16 @@ export function isRlsRecursionError(error: unknown): boolean {
   return message.includes("infinite recursion") || message.includes("policy for relation");
 }
 
-async function getCachedHouseholdId(): Promise<string | null> {
-  return AsyncStorage.getItem(HOUSEHOLD_CACHE_KEY);
+async function getCachedHouseholdId(userId: string): Promise<string | null> {
+  return AsyncStorage.getItem(householdCacheKey(userId));
 }
 
-async function setCachedHouseholdId(householdId: string): Promise<void> {
-  await AsyncStorage.setItem(HOUSEHOLD_CACHE_KEY, householdId);
+async function setCachedHouseholdId(userId: string, householdId: string): Promise<void> {
+  await AsyncStorage.setItem(householdCacheKey(userId), householdId);
+}
+
+export async function clearCachedHouseholdId(userId: string): Promise<void> {
+  await AsyncStorage.removeItem(householdCacheKey(userId));
 }
 
 export async function getCurrentUserHouseholdId(): Promise<string | null> {
@@ -41,16 +51,13 @@ export async function getCurrentUserHouseholdId(): Promise<string | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const cachedHouseholdId = await getCachedHouseholdId();
+  const cachedHouseholdId = await getCachedHouseholdId(user.id);
   if (cachedHouseholdId) return cachedHouseholdId;
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("household_id")
-    .eq("id", user.id)
-    .maybeSingle<ProfileRow>();
-
-  if (error) {
+  let profile: ProfileRow | null = null;
+  try {
+    profile = (await getProfileByUserId(user.id)) as ProfileRow | null;
+  } catch (error) {
     if (isRlsRecursionError(error)) {
       return null;
     }
@@ -58,7 +65,7 @@ export async function getCurrentUserHouseholdId(): Promise<string | null> {
   }
 
   if (profile?.household_id) {
-    await setCachedHouseholdId(profile.household_id);
+    await setCachedHouseholdId(user.id, profile.household_id);
     return profile.household_id;
   }
 
@@ -88,31 +95,29 @@ export async function ensureCurrentUserSetup(): Promise<string> {
     ? `${user.email.split("@")[0]}'s Household`
     : "My Household";
 
-  const { data: household, error: householdError } = await supabase
-    .from("households")
-    .insert({
-      name: defaultHouseholdName,
-      created_by: user.id,
-    })
-    .select("id")
-    .single<HouseholdRow>();
+  const { data: household, error: householdError } = await withRetry(async () =>
+    supabase
+      .from("households")
+      .insert({
+        name: defaultHouseholdName,
+        created_by: user.id,
+      })
+      .select("id")
+      .single<HouseholdRow>(),
+  );
 
   if (householdError || !household) {
     throw new Error(householdError?.message ?? "Failed to create household.");
   }
 
-  const { error: upsertProfileError } = await supabase.from("profiles").upsert({
+  await upsertProfile({
     id: user.id,
     household_id: household.id,
     role: "Owner",
     full_name: user.user_metadata?.full_name ?? null,
   });
 
-  if (upsertProfileError) {
-    throw new Error(upsertProfileError.message);
-  }
-
-  await setCachedHouseholdId(household.id);
+  await setCachedHouseholdId(user.id, household.id);
   return household.id;
 }
 
@@ -163,27 +168,20 @@ export async function joinFamilyByInviteCode(code: string): Promise<void> {
     throw new Error("Семья с таким кодом не найдена.");
   }
 
-  const { data: currentProfile } = await supabase
-    .from("profiles")
-    .select("household_id, full_name")
-    .eq("id", user.id)
-    .maybeSingle<ProfileRow>();
+  const currentProfile = (await getProfileByUserId(user.id)) as ProfileRow | null;
 
   const oldFamilyId = currentProfile?.household_id ?? null;
   if (oldFamilyId === targetFamilyId) {
-    await setCachedHouseholdId(targetFamilyId);
+    await setCachedHouseholdId(user.id, targetFamilyId);
     return;
   }
 
-  const { error: upsertError } = await supabase.from("profiles").upsert({
+  await upsertProfile({
     id: user.id,
     household_id: targetFamilyId,
     role: "Member",
     full_name: currentProfile?.full_name ?? user.user_metadata?.full_name ?? null,
   });
-  if (upsertError) {
-    throw new Error(upsertError.message);
-  }
 
   // Verify that profile now points to the target family.
   const { data: verificationProfile, error: verificationError } = await supabase
@@ -212,5 +210,5 @@ export async function joinFamilyByInviteCode(code: string): Promise<void> {
     }
   }
 
-  await setCachedHouseholdId(targetFamilyId);
+  await setCachedHouseholdId(user.id, targetFamilyId);
 }

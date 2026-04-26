@@ -70,6 +70,19 @@ begin
 end;
 $$;
 
+create or replace function public.current_user_household_id()
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select household_id
+  from public.profiles
+  where id = auth.uid()
+  limit 1
+$$;
+
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
@@ -109,11 +122,7 @@ on public.profiles
 for select
 using (
   id = auth.uid()
-  or household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  or household_id = public.current_user_household_id()
 );
 
 drop policy if exists "Users can insert own profile" on public.profiles;
@@ -134,11 +143,7 @@ create policy "Inventory readable by household members"
 on public.inventory
 for select
 using (
-  household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  household_id = public.current_user_household_id()
 );
 
 drop policy if exists "Inventory insert by household members" on public.inventory;
@@ -147,11 +152,7 @@ on public.inventory
 for insert
 with check (
   created_by = auth.uid()
-  and household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  and household_id = public.current_user_household_id()
 );
 
 drop policy if exists "Inventory update by household members" on public.inventory;
@@ -159,18 +160,10 @@ create policy "Inventory update by household members"
 on public.inventory
 for update
 using (
-  household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  household_id = public.current_user_household_id()
 )
 with check (
-  household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  household_id = public.current_user_household_id()
 );
 
 drop policy if exists "Inventory delete by household members" on public.inventory;
@@ -178,11 +171,7 @@ create policy "Inventory delete by household members"
 on public.inventory
 for delete
 using (
-  household_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  household_id = public.current_user_household_id()
 );
 
 drop policy if exists "Shopping readable by household members" on public.shopping_items;
@@ -190,11 +179,7 @@ create policy "Shopping readable by household members"
 on public.shopping_items
 for select
 using (
-  family_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  family_id = public.current_user_household_id()
 );
 
 drop policy if exists "Shopping insert by household members" on public.shopping_items;
@@ -202,11 +187,7 @@ create policy "Shopping insert by household members"
 on public.shopping_items
 for insert
 with check (
-  family_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  family_id = public.current_user_household_id()
 );
 
 drop policy if exists "Shopping update by household members" on public.shopping_items;
@@ -214,18 +195,10 @@ create policy "Shopping update by household members"
 on public.shopping_items
 for update
 using (
-  family_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  family_id = public.current_user_household_id()
 )
 with check (
-  family_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  family_id = public.current_user_household_id()
 );
 
 drop policy if exists "Shopping delete by household members" on public.shopping_items;
@@ -233,9 +206,5 @@ create policy "Shopping delete by household members"
 on public.shopping_items
 for delete
 using (
-  family_id in (
-    select household_id
-    from public.profiles
-    where id = auth.uid()
-  )
+  family_id = public.current_user_household_id()
 );

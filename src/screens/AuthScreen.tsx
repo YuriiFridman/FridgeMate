@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -85,6 +86,9 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       >
         <ScrollView contentContainerStyle={styles.scrollContainer}>
           <View style={styles.container}>
+            <View style={styles.brandRow}>
+              <Image source={require("../../1024x1024.png")} style={styles.brandLogo} resizeMode="contain" />
+            </View>
             <Text style={styles.title}>Мой Холодильник</Text>
             <Text style={styles.subtitle}>
               {isRegisterMode ? "Создайте аккаунт" : "Войдите в аккаунт"}
@@ -189,6 +193,15 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     paddingHorizontal: 24,
     gap: 12,
+  },
+  brandRow: {
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  brandLogo: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
   },
   title: {
     fontSize: 32,

@@ -5,8 +5,16 @@ import {
   getCurrentUserHouseholdId,
   isRlsRecursionError,
 } from "../lib/userSetup";
+import { DataError } from "../lib/dataErrors";
 import { scheduleExpiryNotification } from "../services/notificationService";
 import { supabase } from "../lib/supabase";
+import {
+  deleteInventoryItem,
+  getInventoryByHousehold,
+  insertInventoryItem,
+  insertInventoryItems,
+  updateInventoryItem,
+} from "../repositories/inventoryRepository";
 import type {
   InventoryCategory,
   InventoryItem,
@@ -49,11 +57,17 @@ export function useInventory(): UseInventoryResult {
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
   );
   const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const fetchRequestRef = useRef(0);
+  const suppressRealtimeEventsRef = useRef(0);
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchItems = useCallback(async () => {
-    setError(null);
-    setIsLoading(true);
-    setIsWaitingForHousehold(false);
+  const fetchItems = useCallback(async (source: "manual" | "realtime" = "manual") => {
+    const requestId = ++fetchRequestRef.current;
+    if (source !== "realtime") {
+      setError(null);
+      setIsLoading(true);
+      setIsWaitingForHousehold(false);
+    }
 
     const {
       data: { user },
@@ -61,12 +75,14 @@ export function useInventory(): UseInventoryResult {
     } = await supabase.auth.getUser();
 
     if (authError) {
+      if (requestId !== fetchRequestRef.current) return;
       setError(authError.message);
       setIsLoading(false);
       return;
     }
 
     if (!user) {
+      if (requestId !== fetchRequestRef.current) return;
       setError("Войдите в аккаунт, чтобы загрузить инвентарь.");
       setIsLoading(false);
       return;
@@ -75,11 +91,14 @@ export function useInventory(): UseInventoryResult {
     const householdId = await getCurrentUserHouseholdId();
 
     if (!householdId) {
+      if (requestId !== fetchRequestRef.current) return;
       setRealtimeHouseholdId(null);
       setHouseholdLabel("Family: не подключена");
       setIsWaitingForHousehold(true);
+      setIsLoading(false);
       return;
     }
+    if (requestId !== fetchRequestRef.current) return;
     setRealtimeHouseholdId(householdId);
     const shortId = householdId.slice(0, 8);
 
@@ -88,25 +107,27 @@ export function useInventory(): UseInventoryResult {
       .select("name")
       .eq("id", householdId)
       .maybeSingle<{ name: string | null }>();
+    if (requestId !== fetchRequestRef.current) return;
     const resolvedGroup = householdData?.name?.trim();
     setHouseholdLabel(resolvedGroup ? `Family: ${resolvedGroup}` : `Family ID: ${shortId}`);
 
-    const { data, error: inventoryError } = await supabase
-      .from("inventory")
-      .select("*")
-      .eq("household_id", householdId)
-      .order("expiry_date", { ascending: true });
-
-    if (inventoryError) {
-      if (isRlsRecursionError(inventoryError)) {
+    if (requestId !== fetchRequestRef.current) return;
+    try {
+      const inventory = await getInventoryByHousehold(householdId);
+      if (requestId !== fetchRequestRef.current) return;
+      setItems(inventory);
+    } catch (inventoryError) {
+      if (inventoryError instanceof DataError && inventoryError.code === "rls") {
         setError(
           "Обнаружена проблема RLS в базе данных. Обновите SQL-политики и перезапустите приложение.",
         );
       } else {
-        setError(inventoryError.message);
+        setError(
+          inventoryError instanceof Error
+            ? inventoryError.message
+            : "Не удалось загрузить инвентарь.",
+        );
       }
-    } else {
-      setItems((data ?? []) as InventoryItem[]);
     }
 
     setIsLoading(false);
@@ -115,11 +136,11 @@ export function useInventory(): UseInventoryResult {
   const retryProfile = useCallback(async () => {
     setError(null);
     setIsWaitingForHousehold(false);
-    await fetchItems();
+    await fetchItems("manual");
   }, [fetchItems]);
 
   useEffect(() => {
-    fetchItems().catch((err: unknown) => {
+    fetchItems("manual").catch((err: unknown) => {
       setError(err instanceof Error ? err.message : "Не удалось загрузить инвентарь.");
       setIsLoading(false);
     });
@@ -129,7 +150,7 @@ export function useInventory(): UseInventoryResult {
     if (!isWaitingForHousehold) return;
 
     const timer = setTimeout(() => {
-      fetchItems().catch((err: unknown) => {
+      fetchItems("manual").catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Не удалось загрузить инвентарь.");
         setIsLoading(false);
         setIsWaitingForHousehold(false);
@@ -159,7 +180,16 @@ export function useInventory(): UseInventoryResult {
           filter: `household_id=eq.${realtimeHouseholdId}`,
         },
         () => {
-          void fetchItems();
+          if (suppressRealtimeEventsRef.current > 0) {
+            suppressRealtimeEventsRef.current -= 1;
+            return;
+          }
+          if (realtimeDebounceRef.current) {
+            clearTimeout(realtimeDebounceRef.current);
+          }
+          realtimeDebounceRef.current = setTimeout(() => {
+            void fetchItems("realtime");
+          }, 250);
         },
       )
       .subscribe();
@@ -169,6 +199,10 @@ export function useInventory(): UseInventoryResult {
       void supabase.removeChannel(channel);
       if (realtimeChannelRef.current === channel) {
         realtimeChannelRef.current = null;
+      }
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = null;
       }
     };
   }, [fetchItems, realtimeHouseholdId]);
@@ -188,26 +222,26 @@ export function useInventory(): UseInventoryResult {
       const expiryDateIso = payload.expiryDate.toISOString().slice(0, 10);
       const status = statusFromExpiry(payload.expiryDate);
 
-      const { error: insertError } = await supabase.from("inventory").insert({
-        household_id: householdId,
-        created_by: user.id,
-        name: payload.name.trim(),
-        category: payload.category as InventoryCategory,
-        expiry_date: expiryDateIso,
-        quantity: payload.quantity,
-        status,
-      });
-
-      if (insertError) {
-        if (isRlsRecursionError(insertError)) {
+      try {
+        await insertInventoryItem({
+          householdId,
+          userId: user.id,
+          name: payload.name.trim(),
+          category: payload.category as InventoryCategory,
+          expiryDateIso,
+          quantity: payload.quantity,
+          status,
+        });
+      } catch (insertError) {
+        if (insertError instanceof DataError && insertError.code === "rls") {
           throw new Error("Обнаружена рекурсия в RLS-политиках. Обновите SQL-политики.");
         }
-        throw new Error(insertError.message);
+        throw insertError instanceof Error ? insertError : new Error("Не удалось добавить продукт.");
       }
 
       await scheduleExpiryNotification(payload.name.trim(), payload.expiryDate);
-
-      await fetchItems();
+      suppressRealtimeEventsRef.current += 1;
+      await fetchItems("manual");
     },
     [fetchItems],
   );
@@ -224,23 +258,23 @@ export function useInventory(): UseInventoryResult {
 
       const householdId = await ensureCurrentUserSetup();
 
-      const rows = payloads.map((payload) => ({
-        household_id: householdId,
-        created_by: user.id,
-        name: payload.name.trim(),
-        category: payload.category,
-        expiry_date: payload.expiryDate.toISOString().slice(0, 10),
-        quantity: Math.max(1, payload.quantity),
-        status: statusFromExpiry(payload.expiryDate),
-      }));
-
-      const { error: insertError } = await supabase.from("inventory").insert(rows);
-
-      if (insertError) {
-        if (isRlsRecursionError(insertError)) {
+      try {
+        await insertInventoryItems(
+          payloads.map((payload) => ({
+            householdId,
+            userId: user.id,
+            name: payload.name.trim(),
+            category: payload.category,
+            expiryDateIso: payload.expiryDate.toISOString().slice(0, 10),
+            quantity: Math.max(1, payload.quantity),
+            status: statusFromExpiry(payload.expiryDate),
+          })),
+        );
+      } catch (insertError) {
+        if (insertError instanceof DataError && insertError.code === "rls") {
           throw new Error("Обнаружена рекурсия в RLS-политиках. Обновите SQL-политики.");
         }
-        throw new Error(insertError.message);
+        throw insertError instanceof Error ? insertError : new Error("Не удалось добавить продукты.");
       }
 
       await Promise.all(
@@ -248,24 +282,25 @@ export function useInventory(): UseInventoryResult {
           scheduleExpiryNotification(payload.name.trim(), payload.expiryDate),
         ),
       );
-
-      await fetchItems();
+      suppressRealtimeEventsRef.current += Math.max(1, payloads.length);
+      await fetchItems("manual");
     },
     [fetchItems],
   );
 
   const deleteItem = useCallback(
     async (itemId: string) => {
-      const { error: deleteError } = await supabase.from("inventory").delete().eq("id", itemId);
-
-      if (deleteError) {
-        if (isRlsRecursionError(deleteError)) {
+      try {
+        await deleteInventoryItem(itemId);
+      } catch (deleteError) {
+        if (deleteError instanceof DataError && deleteError.code === "rls") {
           throw new Error("Обнаружена рекурсия в RLS-политиках. Обновите SQL-политики.");
         }
-        throw new Error(deleteError.message);
+        throw deleteError instanceof Error ? deleteError : new Error("Не удалось удалить продукт.");
       }
 
-      await fetchItems();
+      suppressRealtimeEventsRef.current += 1;
+      await fetchItems("manual");
     },
     [fetchItems],
   );
@@ -275,25 +310,23 @@ export function useInventory(): UseInventoryResult {
       const expiryDateIso = payload.expiryDate.toISOString().slice(0, 10);
       const status = statusFromExpiry(payload.expiryDate);
 
-      const { error: updateError } = await supabase
-        .from("inventory")
-        .update({
+      try {
+        await updateInventoryItem(itemId, {
           name: payload.name.trim(),
           category: payload.category,
-          expiry_date: expiryDateIso,
+          expiryDateIso,
           quantity: Math.max(1, payload.quantity),
           status,
-        })
-        .eq("id", itemId);
-
-      if (updateError) {
-        if (isRlsRecursionError(updateError)) {
+        });
+      } catch (updateError) {
+        if (updateError instanceof DataError && updateError.code === "rls") {
           throw new Error("Обнаружена рекурсия в RLS-политиках. Обновите SQL-политики.");
         }
-        throw new Error(updateError.message);
+        throw updateError instanceof Error ? updateError : new Error("Не удалось обновить продукт.");
       }
 
-      await fetchItems();
+      suppressRealtimeEventsRef.current += 1;
+      await fetchItems("manual");
     },
     [fetchItems],
   );

@@ -4,10 +4,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppCard } from "../components/AppCard";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { getFamilyContext, type FamilyRole } from "../lib/family";
-import { supabase } from "../lib/supabase";
 import { joinFamilyByInviteCode, toFamilyInviteCode } from "../lib/userSetup";
+import {
+  getProfilesByHousehold,
+  updateProfileName,
+  updateProfileRole,
+} from "../repositories/profileRepository";
+import { supabase } from "../lib/supabase";
 import { useAppTheme } from "../theme/appTheme";
 
 interface FamilyMember {
@@ -17,7 +23,7 @@ interface FamilyMember {
 }
 
 export default function ProfileScreen() {
-  const { palette } = useAppTheme();
+  const { palette, spacing } = useAppTheme();
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [familyLabel, setFamilyLabel] = useState("Family: ...");
   const [role, setRole] = useState<FamilyRole>("Member");
@@ -39,18 +45,13 @@ export default function ProfileScreen() {
     } = await supabase.auth.getUser();
     setName(String(user?.user_metadata?.full_name ?? ""));
 
-    const { data: familyMembers } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("household_id", family.familyId); // family_id scope.
+    const familyMembers = await getProfilesByHousehold(family.familyId);
     setMembers(
-      ((familyMembers ?? []) as Array<{ id: string; full_name: string | null; role?: FamilyRole }>).map(
-        (member) => ({
-          id: member.id,
-          full_name: member.full_name,
-          role: member.role,
-        }),
-      ),
+      familyMembers.map((member) => ({
+        id: member.id,
+        full_name: member.full_name,
+        role: member.role as FamilyRole | undefined,
+      })),
     );
   }, []);
 
@@ -65,11 +66,7 @@ export default function ProfileScreen() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
-    await supabase
-      .from("profiles")
-      .update({ full_name: name.trim() })
-      .eq("id", user.id)
-      .eq("household_id", familyId);
+    await updateProfileName(user.id, familyId, name.trim());
 
     if (password.trim().length > 0) {
       await supabase.auth.updateUser({ password });
@@ -85,12 +82,9 @@ export default function ProfileScreen() {
 
   const promoteToAdmin = async (memberId: string) => {
     if (role !== "Owner" || !familyId) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: "Admin" })
-      .eq("id", memberId)
-      .eq("household_id", familyId);
-    if (error) {
+    try {
+      await updateProfileRole(memberId, familyId, "Admin");
+    } catch {
       Alert.alert(
         "Нужно обновить БД",
         "Не удалось повысить роль. Добавьте колонку role в таблицу profiles.",
@@ -133,9 +127,10 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
-      <ScreenHeader title="Профиль" subtitle="Аккаунт и семейные роли" familyLabel={familyLabel} />
-      <AppCard style={styles.card}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "left", "right"]}>
+      <ScreenContainer maxWidth={860} style={{ gap: spacing.sm }}>
+        <ScreenHeader title="Профиль" subtitle="Аккаунт и семейные роли" familyLabel={familyLabel} />
+        <AppCard style={styles.card}>
         <Text style={[styles.label, { color: palette.textMuted }]}>Роль: {role}</Text>
         <TextInput
           value={name}
@@ -153,16 +148,16 @@ export default function ProfileScreen() {
           style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.bg }]}
         />
         <PrimaryButton label="Сохранить" onPress={saveProfile} />
-      </AppCard>
-
-      {(role === "Owner" || role === "Admin") && (
-        <AppCard style={styles.card}>
-          <PrimaryButton label="Сгенерировать Family Invite Link/Code" onPress={generateInviteCode} />
-          {inviteCode ? <Text style={[styles.invite, { color: palette.text }]}>Код: {inviteCode}</Text> : null}
         </AppCard>
-      )}
 
-      <AppCard style={styles.card}>
+        {(role === "Owner" || role === "Admin") && (
+          <AppCard style={styles.card}>
+            <PrimaryButton label="Сгенерировать Family Invite Link/Code" onPress={generateInviteCode} />
+            {inviteCode ? <Text style={[styles.invite, { color: palette.text }]}>Код: {inviteCode}</Text> : null}
+          </AppCard>
+        )}
+
+        <AppCard style={styles.card}>
         <Text style={[styles.sectionTitle, { color: palette.text }]}>Перейти в другую семью</Text>
         <TextInput
           value={joinCode}
@@ -174,10 +169,10 @@ export default function ProfileScreen() {
           autoCorrect={false}
         />
         <PrimaryButton label="Перейти по коду" onPress={handleJoinFamily} />
-      </AppCard>
+        </AppCard>
 
-      {role === "Owner" && (
-        <AppCard style={styles.card}>
+        {role === "Owner" && (
+          <AppCard style={styles.card}>
           <Text style={[styles.sectionTitle, { color: palette.text }]}>Управление ролями</Text>
           {members.map((member) => (
             <View key={member.id} style={styles.memberRow}>
@@ -191,14 +186,14 @@ export default function ProfileScreen() {
               ) : null}
             </View>
           ))}
-        </AppCard>
-      )}
+          </AppCard>
+        )}
+      </ScreenContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, gap: 10 },
   card: { gap: 10 },
   label: { fontWeight: "700" },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
