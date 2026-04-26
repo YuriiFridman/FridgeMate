@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -16,6 +15,7 @@ import { CircleCheck } from "../components/CircleCheck";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { ThemedInput } from "../components/ThemedInput";
 import { getFamilyContext } from "../lib/family";
 import { trackEvent } from "../lib/telemetry";
 import {
@@ -162,16 +162,11 @@ export default function ShoppingScreen() {
       <ScreenContainer style={{ gap: spacing.sm }}>
         <ScreenHeader title="Покупки" subtitle="Список того, что нужно купить" familyLabel={familyLabel} />
         <View style={[styles.addRow, isCompactLayout && styles.addRowCompact]}>
-        <TextInput
+        <ThemedInput
           value={manualTitle}
           onChangeText={setManualTitle}
           placeholder="Добавить вручную (например, Soap)"
-          placeholderTextColor={palette.textMuted}
-          style={[
-            styles.input,
-            isCompactLayout && styles.inputCompact,
-            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
-          ]}
+          style={[styles.input, isCompactLayout && styles.inputCompact]}
         />
         <View style={[styles.addButtonWrap, isCompactLayout && styles.addButtonWrapCompact]}>
           <PrimaryButton label="Добавить" onPress={addManualItem} />

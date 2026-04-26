@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,7 +7,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +16,9 @@ import { CircleCheck } from "../components/CircleCheck";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { ThemedInput } from "../components/ThemedInput";
 import { trackEvent } from "../lib/telemetry";
+import { isFeatureEnabled } from "../lib/featureFlags";
 import {
   buildEventChecklist,
   categorizeShoppingItems,
@@ -26,6 +27,8 @@ import {
 } from "../features/smartPlanning";
 import { getFamilyContext } from "../lib/family";
 import { addShoppingItems } from "../repositories/shoppingRepository";
+import { loadEventChecklist, saveEventChecklist } from "../repositories/eventChecklistRepository";
+import { getCurrentUserPreferences } from "../repositories/profilePreferencesRepository";
 import {
   compareIngredientsWithInventory,
   generateEventMenu,
@@ -49,22 +52,55 @@ export default function EventsScreen() {
   const [selectedTitles, setSelectedTitles] = useState<string[]>([]);
   const [missingResult, setMissingResult] = useState<string[]>([]);
   const [checklist, setChecklist] = useState<EventChecklistItem[]>([]);
+  const [currentFamilyId, setCurrentFamilyId] = useState<string | null>(null);
   const [budget, setBudget] = useState("");
+  const [preferencesHint, setPreferencesHint] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isBuildingList, setIsBuildingList] = useState(false);
 
   const inventoryNames = useMemo(() => items.map((item) => item.name), [items]);
 
+  useEffect(() => {
+    getFamilyContext()
+      .then(async (family) => {
+        if (!family) return;
+        setCurrentFamilyId(family.familyId);
+        const saved = await loadEventChecklist(family.familyId);
+        if (saved?.length) {
+          setChecklist(saved);
+        }
+      })
+      .catch(() => {});
+    getCurrentUserPreferences()
+      .then((preferences) => {
+        const chunks: string[] = [];
+        if (preferences.diet) chunks.push(`тип питания: ${preferences.diet}`);
+        if (preferences.allergies.length) chunks.push(`аллергии: ${preferences.allergies.join(", ")}`);
+        if (preferences.excluded_ingredients.length) {
+          chunks.push(`исключить: ${preferences.excluded_ingredients.join(", ")}`);
+        }
+        setPreferencesHint(chunks.join("; "));
+      })
+      .catch(() => setPreferencesHint(""));
+  }, []);
+
   const generateMenu = async () => {
     setIsGenerating(true);
     try {
-      const generated = await generateEventMenu(Number(peopleCount) || 1);
+      const generated = await generateEventMenu(Number(peopleCount) || 1, {
+        budgetEuro: budget.trim() ? Math.max(0, Number(budget) || 0) : null,
+        preferencesHint,
+      });
       trackEvent("events_menu_generated", {
         peopleCount: Math.max(1, Number(peopleCount) || 1),
         dishes: generated.length,
       });
       setMenu(generated);
-      setChecklist(buildEventChecklist(Number(peopleCount) || 1));
+      const initialChecklist = buildEventChecklist(Number(peopleCount) || 1);
+      setChecklist(initialChecklist);
+      if (currentFamilyId) {
+        await saveEventChecklist(currentFamilyId, initialChecklist);
+      }
       setSelectedTitles([]);
       setMissingResult([]);
       if (generated.length === 0) {
@@ -169,34 +205,25 @@ export default function EventsScreen() {
         <ScreenHeader title="Посиделки" subtitle="Праздничное меню и закупка" familyLabel={householdLabel} />
 
       <View style={[styles.row, isCompactLayout && styles.rowCompact]}>
-        <TextInput
+        <ThemedInput
           value={peopleCount}
           onChangeText={setPeopleCount}
           keyboardType="numeric"
           placeholder="Сколько человек"
-          placeholderTextColor={palette.textMuted}
-          style={[
-            styles.input,
-            isCompactLayout && styles.inputCompact,
-            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
-          ]}
+          style={[styles.input, isCompactLayout && styles.inputCompact]}
         />
-        <TextInput
+        <ThemedInput
           value={budget}
           onChangeText={setBudget}
           keyboardType="numeric"
           placeholder={`Бюджет (€), напр. ${estimateBudgetBand(Number(peopleCount) || 1).min}`}
-          placeholderTextColor={palette.textMuted}
-          style={[
-            styles.input,
-            isCompactLayout && styles.inputCompact,
-            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
-          ]}
+          style={[styles.input, isCompactLayout && styles.inputCompact]}
         />
         <View style={[styles.generateWrap, isCompactLayout && styles.generateWrapCompact]}>
           <PrimaryButton label="Сгенерировать" onPress={generateMenu} loading={isGenerating} />
         </View>
       </View>
+      {isFeatureEnabled("smartPlanning") ? (
       <AppCard style={styles.budgetCard}>
         <Text style={[styles.budgetTitle, { color: palette.text }]}>Smart Budget</Text>
         <Text style={{ color: palette.textMuted }}>
@@ -210,6 +237,7 @@ export default function EventsScreen() {
           </Text>
         ) : null}
       </AppCard>
+      ) : null}
 
         <FlatList
         data={menu}
@@ -254,20 +282,22 @@ export default function EventsScreen() {
                 ))}
               </AppCard>
             ) : null}
-            {checklist.length > 0 ? (
+            {isFeatureEnabled("smartPlanning") && checklist.length > 0 ? (
               <AppCard style={styles.resultCard}>
                 <Text style={[styles.resultTitle, { color: palette.text }]}>Чеклист подготовки</Text>
                 {checklist.map((item) => (
                   <Pressable
                     key={item.id}
                     style={styles.checklistRow}
-                    onPress={() =>
-                      setChecklist((prev) =>
-                        prev.map((entry) =>
-                          entry.id === item.id ? { ...entry, done: !entry.done } : entry,
-                        ),
-                      )
-                    }
+                    onPress={async () => {
+                      const updated = checklist.map((entry) =>
+                        entry.id === item.id ? { ...entry, done: !entry.done } : entry,
+                      );
+                      setChecklist(updated);
+                      if (currentFamilyId) {
+                        await saveEventChecklist(currentFamilyId, updated);
+                      }
+                    }}
                   >
                     <CircleCheck checked={item.done} />
                     <Text style={{ color: palette.textMuted }}>{item.title}</Text>

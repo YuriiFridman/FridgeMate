@@ -1,3 +1,5 @@
+import { consumeAiCallOrThrow } from "../lib/usageLimits";
+
 export interface ParsedReceiptItem {
   name: string;
   quantity: number;
@@ -156,6 +158,7 @@ export async function processReceipt(
   if (!apiKey) {
     throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
   }
+  await consumeAiCallOrThrow();
 
   const imagePayload = normalizeImagePayload(base64Image, mimeType);
   const imageDataUrl = `data:${imagePayload.mimeType || "image/jpeg"};base64,${imagePayload.data}`;
@@ -247,16 +250,21 @@ export async function processReceiptFromBase64(
   return processReceipt(base64, mimeType);
 }
 
-export async function generateRecipes(products: string[]): Promise<GeneratedRecipe[]> {
+export async function generateRecipes(
+  products: string[],
+  options?: { preferencesHint?: string },
+): Promise<GeneratedRecipe[]> {
   const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
   const model = process.env.EXPO_PUBLIC_GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
   if (!apiKey) {
     throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
   }
+  await consumeAiCallOrThrow();
 
   const endpoint = "https://api.groq.com/openai/v1/chat/completions";
   const productList = products.length > 0 ? products.join(", ") : "нет доступных продуктов";
-  const recipePrompt = `У меня есть: ${productList}. Предложи 3 рецепта. Один — максимально быстрый, второй — из продуктов, которые скоро испортятся, третий — необычный. Верни JSON: {"recipes": [{"title": "...", "ingredients": ["..."], "steps": "...", "time": "20 мин"}]}.`;
+  const preferencesHint = options?.preferencesHint ? `Учитывай предпочтения: ${options.preferencesHint}. ` : "";
+  const recipePrompt = `У меня есть: ${productList}. ${preferencesHint}Предложи 3 рецепта. Один — максимально быстрый, второй — из продуктов, которые скоро испортятся, третий — необычный. Верни JSON: {"recipes": [{"title": "...", "ingredients": ["..."], "steps": "...", "time": "20 мин"}]}.`;
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -290,15 +298,28 @@ export async function generateRecipes(products: string[]): Promise<GeneratedReci
   return parseAiRecipeResponse(responseText);
 }
 
-export async function generateEventMenu(peopleCount: number): Promise<EventDish[]> {
+export async function generateEventMenu(
+  peopleCount: number,
+  options?: { budgetEuro?: number | null; preferencesHint?: string },
+): Promise<EventDish[]> {
   const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
   const model = process.env.EXPO_PUBLIC_GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
   if (!apiKey) {
     throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
   }
+  await consumeAiCallOrThrow();
 
+  const budgetHint =
+    typeof options?.budgetEuro === "number" && options.budgetEuro > 0
+      ? `Ориентируйся на общий бюджет ${Math.round(options.budgetEuro)} евро.`
+      : "";
+  const preferencesHint = options?.preferencesHint
+    ? `Учитывай предпочтения: ${options.preferencesHint}.`
+    : "";
   const prompt =
     `Нужно составить полноценный праздничный ужин для ${Math.max(1, peopleCount)} человек. ` +
+    `${budgetHint} ` +
+    `${preferencesHint} ` +
     `Игнорируй холодильник и доступные продукты. ` +
     `СТРОГИЕ ПРАВИЛА МЕНЮ: ` +
     `1) Обязательно 2 салата: один сытный и один свежий. ` +
@@ -340,16 +361,22 @@ export async function generateEventMenu(peopleCount: number): Promise<EventDish[
   return parseEventMenuResponse(responseText);
 }
 
-export async function generateWeeklyPlan(products: string[]): Promise<WeeklyPlanDay[]> {
+export async function generateWeeklyPlan(
+  products: string[],
+  options?: { preferencesHint?: string },
+): Promise<WeeklyPlanDay[]> {
   const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
   const model = process.env.EXPO_PUBLIC_GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct";
   if (!apiKey) {
     throw new Error("Не найден EXPO_PUBLIC_GROQ_API_KEY");
   }
+  await consumeAiCallOrThrow();
 
   const productList = products.length > 0 ? products.join(", ") : "продукты не указаны";
+  const preferencesHint = options?.preferencesHint ? `Учитывай предпочтения: ${options.preferencesHint}. ` : "";
   const prompt =
     `Составь недельный план ужинов на 7 дней на основе продуктов: ${productList}. ` +
+    preferencesHint +
     `Приоритет: сначала использовать скоропортящиеся продукты. ` +
     `Верни только JSON: {"plan":[{"day":"Понедельник","title":"...","reason":"почему это блюдо подходит по срокам","time":"25 мин"}]}.`;
 

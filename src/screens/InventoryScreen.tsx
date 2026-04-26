@@ -32,6 +32,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ManualAddModal } from "../components/ManualAddModal";
+import { SkeletonBlock } from "../components/SkeletonBlock";
+import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { useInventory } from "../hooks/useInventory";
 import { supabase } from "../lib/supabase";
@@ -131,7 +133,14 @@ const InventoryRow = memo(function InventoryRow({
     <Pressable style={[styles.card, { backgroundColor: palette.card, borderColor: cardBorder }]} onPress={onPress}>
       <View style={styles.cardHeader}>
         <Text style={[styles.itemName, { color: palette.text }]}>{item.name}</Text>
-        <Pressable style={[styles.deleteHint, { borderColor: "#FCA5A5", backgroundColor: "#FFF1F2" }]} onPress={onDelete} hitSlop={8}>
+        <Pressable
+          style={[styles.deleteHint, { borderColor: "#FCA5A5", backgroundColor: "#FFF1F2" }]}
+          onPress={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          hitSlop={8}
+        >
           <Trash2 size={16} color="#E11D48" />
           <Text style={styles.deleteHintText}>Delete</Text>
         </Pressable>
@@ -188,7 +197,7 @@ export default function InventoryScreen() {
   const [receiptItems, setReceiptItems] = useState<ParsedReceiptItem[]>([]);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const { isDark, palette, toggleTheme } = useAppTheme();
+  const { isDark, palette, toggleTheme, spacing } = useAppTheme();
   const cardBorderColor = isDark ? "#334155" : "#F1F5F9";
 
   const emptyState = !isLoading && items.length === 0;
@@ -315,16 +324,9 @@ export default function InventoryScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[
-        styles.container,
-        {
-          backgroundColor: palette.bg,
-        },
-      ]}
-      edges={["top", "left", "right"]}
-    >
-      <View style={styles.header}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "left", "right"]}>
+      <ScreenContainer maxWidth={1120} style={{ gap: spacing.sm }}>
+        <View style={styles.header}>
         <ScreenHeader
           title="Мой Холодильник"
           subtitle="Контроль свежести продуктов"
@@ -355,16 +357,21 @@ export default function InventoryScreen() {
             <LogOut size={18} color="#E11D48" />
           </Pressable>
         </View>
-      </View>
+        </View>
 
-      {isLoading ? (
+        {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#111827" />
           <Text style={[styles.helperText, { color: palette.textMuted }]}>Загрузка инвентаря...</Text>
+          <View style={styles.skeletonWrap}>
+            <SkeletonBlock height={16} />
+            <SkeletonBlock height={12} />
+            <SkeletonBlock height={12} />
+          </View>
         </View>
-      ) : null}
+        ) : null}
 
-      {!isLoading && error ? (
+        {!isLoading && error ? (
         <View style={[styles.errorCard, { borderColor: "#FCA5A5", backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>
           <Text style={styles.errorText}>{error}</Text>
           <Pressable
@@ -377,8 +384,8 @@ export default function InventoryScreen() {
             <Text style={styles.retryButtonText}>Повторить</Text>
           </Pressable>
         </View>
-      ) : null}
-      {emptyState ? (
+        ) : null}
+        {emptyState ? (
         <View style={[styles.emptyCard, { backgroundColor: palette.card, borderColor: cardBorderColor }]}>
           <View style={[styles.emptyIconWrap, { backgroundColor: isDark ? "#1E293B" : "#F3F4F6" }]}>
             <Refrigerator size={30} color="#9CA3AF" />
@@ -386,9 +393,9 @@ export default function InventoryScreen() {
           <Text style={[styles.emptyTitle, { color: palette.text }]}>Ваш холодильник пуст</Text>
           <Text style={[styles.helperText, { color: palette.textMuted }]}>Нажмите +, чтобы добавить продукты</Text>
         </View>
-      ) : null}
+        ) : null}
 
-      {!isLoading ? (
+        {!isLoading ? (
         <Pressable
           style={[styles.manualAddButton, { borderColor: palette.border, backgroundColor: palette.card }]}
           onPress={() => setIsModalOpen(true)}
@@ -396,9 +403,9 @@ export default function InventoryScreen() {
           <Plus size={16} color={palette.text} />
           <Text style={[styles.manualAddButtonText, { color: palette.text }]}>Manual Add</Text>
         </Pressable>
-      ) : null}
+        ) : null}
 
-      {!isLoading && items.length > 0 ? (
+        {!isLoading && items.length > 0 ? (
         <FlatList
           style={styles.listContainer}
           data={items}
@@ -425,9 +432,9 @@ export default function InventoryScreen() {
             />
           }
         />
-      ) : null}
+        ) : null}
 
-      <ManualAddModal
+        <ManualAddModal
         visible={isModalOpen || Boolean(editingItem)}
         onClose={() => {
           setSubmitError(null);
@@ -467,9 +474,9 @@ export default function InventoryScreen() {
               }
             : null
         }
-      />
+        />
 
-      <Modal
+        <Modal
         visible={isSummaryOpen}
         transparent
         animationType="fade"
@@ -543,27 +550,20 @@ export default function InventoryScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+        </Modal>
 
-      {isAnalyzingReceipt || isSavingReceipt ? (
+        {isAnalyzingReceipt || isSavingReceipt ? (
         <View style={[styles.loadingOverlay, { backgroundColor: isDark ? "rgba(2,6,23,0.78)" : "rgba(249, 250, 251, 0.9)" }]}>
           <ActivityIndicator size="large" color="#E11D48" />
           <Text style={[styles.loadingOverlayText, { color: palette.text }]}>Синхронизация с ИИ...</Text>
         </View>
-      ) : null}
+        ) : null}
+      </ScreenContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    width: "100%",
-    maxWidth: 1120,
-    alignSelf: "center",
-    paddingHorizontal: 16,
-  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -702,6 +702,11 @@ const styles = StyleSheet.create({
   center: {
     marginTop: 36,
     alignItems: "center",
+    gap: 8,
+  },
+  skeletonWrap: {
+    marginTop: 8,
+    width: 220,
     gap: 8,
   },
   emptyCard: {

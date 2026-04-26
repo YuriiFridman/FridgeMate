@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppCard } from "../components/AppCard";
 import { PrimaryButton } from "../components/PrimaryButton";
 import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { ThemedInput } from "../components/ThemedInput";
 import { getFamilyContext, type FamilyRole } from "../lib/family";
 import { joinFamilyByInviteCode, toFamilyInviteCode } from "../lib/userSetup";
 import {
@@ -13,8 +14,14 @@ import {
   updateProfileName,
   updateProfileRole,
 } from "../repositories/profileRepository";
+import {
+  getCurrentUserPreferences,
+  saveCurrentUserPreferences,
+} from "../repositories/profilePreferencesRepository";
+import { getFamilyInsights, type FamilyInsights } from "../repositories/insightsRepository";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "../theme/appTheme";
+import { isFeatureEnabled } from "../lib/featureFlags";
 
 interface FamilyMember {
   id: string;
@@ -32,6 +39,10 @@ export default function ProfileScreen() {
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [diet, setDiet] = useState("");
+  const [allergies, setAllergies] = useState("");
+  const [excluded, setExcluded] = useState("");
+  const [insights, setInsights] = useState<FamilyInsights | null>(null);
 
   const load = useCallback(async () => {
     const family = await getFamilyContext();
@@ -39,11 +50,16 @@ export default function ProfileScreen() {
     setFamilyId(family.familyId);
     setFamilyLabel(`Family: ${family.familyName}`);
     setRole(family.role);
+    setInsights(await getFamilyInsights(family.familyId));
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
     setName(String(user?.user_metadata?.full_name ?? ""));
+    const preferences = await getCurrentUserPreferences();
+    setDiet(preferences.diet ?? "");
+    setAllergies(preferences.allergies.join(", "));
+    setExcluded(preferences.excluded_ingredients.join(", "));
 
     const familyMembers = await getProfilesByHousehold(family.familyId);
     setMembers(
@@ -72,6 +88,17 @@ export default function ProfileScreen() {
       await supabase.auth.updateUser({ password });
       setPassword("");
     }
+    await saveCurrentUserPreferences({
+      diet: diet.trim() || null,
+      allergies: allergies
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+      excluded_ingredients: excluded
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    });
     Alert.alert("Сохранено", "Профиль обновлен.");
   };
 
@@ -132,23 +159,50 @@ export default function ProfileScreen() {
         <ScreenHeader title="Профиль" subtitle="Аккаунт и семейные роли" familyLabel={familyLabel} />
         <AppCard style={styles.card}>
         <Text style={[styles.label, { color: palette.textMuted }]}>Роль: {role}</Text>
-        <TextInput
+        <ThemedInput
           value={name}
           onChangeText={setName}
           placeholder="Ваше имя"
-          placeholderTextColor={palette.textMuted}
-          style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.bg }]}
+          style={styles.input}
         />
-        <TextInput
+        <ThemedInput
           value={password}
           onChangeText={setPassword}
           placeholder="Новый пароль"
           secureTextEntry
-          placeholderTextColor={palette.textMuted}
-          style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.bg }]}
+          style={styles.input}
         />
         <PrimaryButton label="Сохранить" onPress={saveProfile} />
         </AppCard>
+      <AppCard style={styles.card}>
+        <Text style={[styles.sectionTitle, { color: palette.text }]}>Предпочтения питания</Text>
+        <ThemedInput
+          value={diet}
+          onChangeText={setDiet}
+          placeholder="Тип питания (например, vegetarian)"
+          style={styles.input}
+        />
+        <ThemedInput
+          value={allergies}
+          onChangeText={setAllergies}
+          placeholder="Аллергии через запятую"
+          style={styles.input}
+        />
+        <ThemedInput
+          value={excluded}
+          onChangeText={setExcluded}
+          placeholder="Исключить ингредиенты через запятую"
+          style={styles.input}
+        />
+      </AppCard>
+      {isFeatureEnabled("profileInsights") && insights ? (
+        <AppCard style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: palette.text }]}>Инсайты семьи</Text>
+          <Text style={{ color: palette.textMuted }}>Товаров в холодильнике: {insights.inventoryCount}</Text>
+          <Text style={{ color: palette.textMuted }}>Покупок в работе: {insights.shoppingOpenCount}</Text>
+          <Text style={{ color: palette.textMuted }}>Покупок закрыто: {insights.shoppingDoneCount}</Text>
+        </AppCard>
+      ) : null}
 
         {(role === "Owner" || role === "Admin") && (
           <AppCard style={styles.card}>
@@ -159,12 +213,11 @@ export default function ProfileScreen() {
 
         <AppCard style={styles.card}>
         <Text style={[styles.sectionTitle, { color: palette.text }]}>Перейти в другую семью</Text>
-        <TextInput
+        <ThemedInput
           value={joinCode}
           onChangeText={setJoinCode}
           placeholder="Введите код семьи"
-          placeholderTextColor={palette.textMuted}
-          style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.bg }]}
+          style={styles.input}
           autoCapitalize="none"
           autoCorrect={false}
         />

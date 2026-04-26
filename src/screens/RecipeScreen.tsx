@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppCard } from "../components/AppCard";
 import { PrimaryButton } from "../components/PrimaryButton";
+import { SkeletonBlock } from "../components/SkeletonBlock";
+import { ScreenContainer } from "../components/ScreenContainer";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { useInventory } from "../hooks/useInventory";
 import {
@@ -25,6 +27,7 @@ import {
 } from "../services/aiService";
 import { useAppTheme } from "../theme/appTheme";
 import { deleteInventoryItems } from "../repositories/inventoryRepository";
+import { getCurrentUserPreferences } from "../repositories/profilePreferencesRepository";
 
 function normalizeFoodName(value: string) {
   return value
@@ -54,13 +57,28 @@ function isIngredientMatchedToItem(ingredient: string, itemName: string) {
 
 export default function RecipeScreen() {
   const { items, reload, householdLabel } = useInventory();
-  const { isDark, palette } = useAppTheme();
+  const { isDark, palette, spacing } = useAppTheme();
   const [recipes, setRecipes] = useState<GeneratedRecipe[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preferencesHint, setPreferencesHint] = useState("");
+
+  useEffect(() => {
+    getCurrentUserPreferences()
+      .then((preferences) => {
+        const chunks: string[] = [];
+        if (preferences.diet) chunks.push(`тип питания: ${preferences.diet}`);
+        if (preferences.allergies.length) chunks.push(`аллергии: ${preferences.allergies.join(", ")}`);
+        if (preferences.excluded_ingredients.length) {
+          chunks.push(`исключить: ${preferences.excluded_ingredients.join(", ")}`);
+        }
+        setPreferencesHint(chunks.join("; "));
+      })
+      .catch(() => setPreferencesHint(""));
+  }, []);
 
   const productsForPrompt = useMemo(() => {
     return items
@@ -74,7 +92,7 @@ export default function RecipeScreen() {
     try {
       setError(null);
       setIsGenerating(true);
-      const generated = await generateRecipes(productsForPrompt);
+      const generated = await generateRecipes(productsForPrompt, { preferencesHint });
       setRecipes(generated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сгенерировать рецепты.");
@@ -87,7 +105,7 @@ export default function RecipeScreen() {
     try {
       setError(null);
       setIsGeneratingPlan(true);
-      const plan = await generateWeeklyPlan(productsForPrompt);
+      const plan = await generateWeeklyPlan(productsForPrompt, { preferencesHint });
       setWeeklyPlan(plan);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать недельный план.");
@@ -194,14 +212,15 @@ export default function RecipeScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
-      <ScreenHeader
+    <SafeAreaView style={{ flex: 1, backgroundColor: palette.bg }} edges={["top", "left", "right"]}>
+      <ScreenContainer maxWidth={980} style={{ gap: spacing.sm }}>
+        <ScreenHeader
         title="Рецепты"
         subtitle="Готовим из того, что уже есть в холодильнике"
         familyLabel={householdLabel}
-      />
+        />
 
-      <View style={styles.actions}>
+        <View style={styles.actions}>
         <View style={styles.primaryWrap}>
           <PrimaryButton
             label="✨ Создать рецепт"
@@ -233,9 +252,9 @@ export default function RecipeScreen() {
           <MaterialCommunityIcons name="sync" size={16} color={palette.text} />
           <Text style={[styles.syncButtonText, { color: palette.text }]}>Обновить</Text>
         </Pressable>
-      </View>
+        </View>
 
-      <FlatList
+        <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
         data={feedData}
@@ -266,21 +285,19 @@ export default function RecipeScreen() {
               <AppCard style={styles.loadingCard}>
                 <ActivityIndicator size="large" color={palette.accent} />
                 <Text style={[styles.loadingText, { color: palette.textMuted }]}>ИИ думает над рецептами...</Text>
+                <SkeletonBlock height={12} />
+                <SkeletonBlock height={12} />
               </AppCard>
             ) : null}
           </View>
         }
-      />
+        />
+      </ScreenContainer>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    paddingHorizontal: 16,
-  },
   actions: {
     marginTop: 14,
     flexDirection: "row",
