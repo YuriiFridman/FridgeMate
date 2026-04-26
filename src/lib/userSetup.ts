@@ -123,8 +123,19 @@ export function toFamilyInviteCode(householdId: string): string {
 export function parseFamilyInviteCode(code: string): string | null {
   const trimmed = code.trim();
   if (!trimmed) return null;
-  if (trimmed.startsWith("FAMILY-")) {
-    return trimmed.slice(7);
+  const normalized = trimmed.toUpperCase();
+  if (normalized.startsWith("FAMILY-")) {
+    return trimmed.slice(7).trim();
+  }
+  // Support pasted URLs like https://site/join?code=FAMILY-<id>
+  const codeMatch = trimmed.match(/code=([^&]+)/i);
+  if (codeMatch?.[1]) {
+    const decoded = decodeURIComponent(codeMatch[1]).trim();
+    const decodedUpper = decoded.toUpperCase();
+    if (decodedUpper.startsWith("FAMILY-")) {
+      return decoded.slice(7).trim();
+    }
+    return decoded;
   }
   return trimmed;
 }
@@ -172,6 +183,21 @@ export async function joinFamilyByInviteCode(code: string): Promise<void> {
   });
   if (upsertError) {
     throw new Error(upsertError.message);
+  }
+
+  // Verify that profile now points to the target family.
+  const { data: verificationProfile, error: verificationError } = await supabase
+    .from("profiles")
+    .select("household_id")
+    .eq("id", user.id)
+    .maybeSingle<ProfileRow>();
+  if (verificationError) {
+    throw new Error(verificationError.message);
+  }
+  if (verificationProfile?.household_id !== targetFamilyId) {
+    throw new Error(
+      "Не удалось сменить семью. Проверьте RLS-политики для обновления profiles.household_id.",
+    );
   }
 
   if (oldFamilyId) {
