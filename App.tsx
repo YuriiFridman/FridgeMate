@@ -27,6 +27,24 @@ function AppContent() {
   useEffect(() => {
     let isMounted = true;
     validateRuntimeEnv();
+    if (typeof document !== "undefined") {
+      let viewport = document.querySelector('meta[name="viewport"]');
+      if (!viewport) {
+        viewport = document.createElement("meta");
+        viewport.setAttribute("name", "viewport");
+        document.head.appendChild(viewport);
+      }
+      viewport.setAttribute(
+        "content",
+        "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover",
+      );
+      document.documentElement.style.width = "100%";
+      document.documentElement.style.height = "100%";
+      document.documentElement.style.overflowX = "hidden";
+      document.body.style.width = "100%";
+      document.body.style.height = "100%";
+      document.body.style.overflowX = "hidden";
+    }
 
     const bootstrap = async () => {
       const {

@@ -7,7 +7,7 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.households (
   id uuid primary key default uuid_generate_v4(),
   name text not null check (char_length(name) > 1),
-  created_by uuid not null references auth.users(id) on delete cascade,
+  created_by uuid not null default auth.uid() references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
@@ -144,7 +144,7 @@ drop policy if exists "Users can create households" on public.households;
 create policy "Users can create households"
 on public.households
 for insert
-with check (created_by = auth.uid());
+with check (auth.role() = 'authenticated');
 
 drop policy if exists "Household owner can delete household" on public.households;
 create policy "Household owner can delete household"

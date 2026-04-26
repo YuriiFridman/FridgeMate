@@ -8,6 +8,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -58,6 +59,8 @@ function isIngredientMatchedToItem(ingredient: string, itemName: string) {
 export default function RecipeScreen() {
   const { items, reload, householdLabel } = useInventory();
   const { isDark, palette, spacing } = useAppTheme();
+  const { width } = useWindowDimensions();
+  const isCompactLayout = width < 760;
   const [recipes, setRecipes] = useState<GeneratedRecipe[]>([]);
   const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlanDay[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -220,15 +223,15 @@ export default function RecipeScreen() {
         familyLabel={householdLabel}
         />
 
-        <View style={styles.actions}>
-        <View style={styles.primaryWrap}>
+        <View style={[styles.actions, isCompactLayout && styles.actionsCompact]}>
+        <View style={[styles.primaryWrap, isCompactLayout && styles.primaryWrapCompact]}>
           <PrimaryButton
             label="✨ Создать рецепт"
             onPress={handleGenerateRecipes}
             loading={isGenerating}
           />
         </View>
-        <View style={styles.primaryWrap}>
+        <View style={[styles.primaryWrap, isCompactLayout && styles.primaryWrapCompact]}>
           <PrimaryButton
             label="📅 Автоплан на неделю"
             onPress={handleGenerateWeeklyPlan}
@@ -238,6 +241,7 @@ export default function RecipeScreen() {
         <Pressable
           style={[
             styles.syncButton,
+            isCompactLayout && styles.syncButtonCompact,
             { borderColor: palette.border, backgroundColor: palette.card },
           ]}
           onPress={async () => {
@@ -304,8 +308,14 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 2,
   },
+  actionsCompact: {
+    flexDirection: "column",
+  },
   primaryWrap: {
     flex: 1,
+  },
+  primaryWrapCompact: {
+    width: "100%",
   },
   syncButton: {
     borderRadius: 12,
@@ -318,6 +328,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     minWidth: 96,
+  },
+  syncButtonCompact: {
+    width: "100%",
+    minHeight: 44,
   },
   syncButtonText: {
     color: "#111827",
