@@ -7,7 +7,8 @@ export function validateRuntimeEnv(): void {
   const required = ["EXPO_PUBLIC_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_ANON_KEY"];
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length > 0) {
-    throw new Error(`Missing required env vars: ${missing.join(", ")}`);
+    console.error(`Missing required env vars: ${missing.join(", ")}`);
+    return;
   }
 
   if (!process.env.EXPO_PUBLIC_GROQ_API_KEY) {
