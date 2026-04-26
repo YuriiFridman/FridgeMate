@@ -259,15 +259,16 @@ export default function RecipeScreen() {
             }}
           />
         }
-      >
-        {error ? <Text style={[styles.errorText, { backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>{error}</Text> : null}
         ListHeaderComponent={
-          isGenerating ? (
-            <AppCard style={styles.loadingCard}>
-              <ActivityIndicator size="large" color={palette.accent} />
-              <Text style={[styles.loadingText, { color: palette.textMuted }]}>ИИ думает над рецептами...</Text>
-            </AppCard>
-          ) : null
+          <View style={styles.headerWrap}>
+            {error ? <Text style={[styles.errorText, { backgroundColor: isDark ? "#3F1D1D" : "#FEF2F2" }]}>{error}</Text> : null}
+            {isGenerating ? (
+              <AppCard style={styles.loadingCard}>
+                <ActivityIndicator size="large" color={palette.accent} />
+                <Text style={[styles.loadingText, { color: palette.textMuted }]}>ИИ думает над рецептами...</Text>
+              </AppCard>
+            ) : null}
+          </View>
         }
       />
     </SafeAreaView>
@@ -311,6 +312,9 @@ const styles = StyleSheet.create({
   listContent: {
     gap: 10,
     paddingBottom: 32,
+  },
+  headerWrap: {
+    gap: 10,
   },
   recipeCard: {
     borderRadius: 18,
