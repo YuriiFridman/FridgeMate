@@ -551,12 +551,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F9FAFB",
+    width: "100%",
+    maxWidth: 1120,
+    alignSelf: "center",
     paddingHorizontal: 16,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    flexWrap: "wrap",
     gap: 12,
     marginBottom: 8,
   },

@@ -31,11 +31,13 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: 2,
     marginBottom: 12,
+    flexShrink: 1,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexWrap: "wrap",
   },
   accentDot: {
     width: 10,
@@ -45,6 +47,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "700",
+    flexShrink: 1,
   },
   subtitle: {
     marginTop: 4,

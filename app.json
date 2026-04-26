@@ -5,14 +5,28 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./1024x1024.png",
+    "splash": {
+      "image": "./1242x2436.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
+    "web": {
+      "favicon": "./48x48.png"
+    },
     "android": {
-      "package": "com.fridgemate.app"
+      "package": "com.fridgemate.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./1024x1024.png",
+        "backgroundColor": "#FFFFFF"
+      }
     },
     "ios": {
-      "bundleIdentifier": "com.fridgemate.app"
+      "bundleIdentifier": "com.fridgemate.app",
+      "icon": "./1024x1024.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker",

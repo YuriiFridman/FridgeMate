@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -82,86 +83,88 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.container}>
-          <Text style={styles.title}>Мой Холодильник</Text>
-          <Text style={styles.subtitle}>
-            {isRegisterMode ? "Создайте аккаунт" : "Войдите в аккаунт"}
-          </Text>
-
-          {isRegisterMode ? (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Имя (необязательно)"
-                placeholderTextColor="#9CA3AF"
-                value={fullName}
-                onChangeText={setFullName}
-                autoCapitalize="words"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Код семьи (необязательно)"
-                placeholderTextColor="#9CA3AF"
-                value={familyCode}
-                onChangeText={setFamilyCode}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </>
-          ) : null}
-
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Пароль"
-            placeholderTextColor="#9CA3AF"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          {info ? <Text style={styles.infoText}>{info}</Text> : null}
-
-          <Pressable
-            style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
-            disabled={isLoading}
-            onPress={submit}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.primaryText}>
-                {isRegisterMode ? "Начать" : "Войти"}
-              </Text>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => {
-              setError(null);
-              setInfo(null);
-              setIsRegisterMode((prev) => !prev);
-            }}
-          >
-            <Text style={styles.secondaryText}>
-              {isRegisterMode
-                ? "Уже есть аккаунт? Войти"
-                : "Нет аккаунта? Зарегистрироваться"}
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          <View style={styles.container}>
+            <Text style={styles.title}>Мой Холодильник</Text>
+            <Text style={styles.subtitle}>
+              {isRegisterMode ? "Создайте аккаунт" : "Войдите в аккаунт"}
             </Text>
-          </Pressable>
-        </View>
+
+            {isRegisterMode ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Имя (необязательно)"
+                  placeholderTextColor="#9CA3AF"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  autoCapitalize="words"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Код семьи (необязательно)"
+                  placeholderTextColor="#9CA3AF"
+                  value={familyCode}
+                  onChangeText={setFamilyCode}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </>
+            ) : null}
+
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Пароль"
+              placeholderTextColor="#9CA3AF"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {info ? <Text style={styles.infoText}>{info}</Text> : null}
+
+            <Pressable
+              style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
+              disabled={isLoading}
+              onPress={submit}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.primaryText}>
+                  {isRegisterMode ? "Начать" : "Войти"}
+                </Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => {
+                setError(null);
+                setInfo(null);
+                setIsRegisterMode((prev) => !prev);
+              }}
+            >
+              <Text style={styles.secondaryText}>
+                {isRegisterMode
+                  ? "Уже есть аккаунт? Войти"
+                  : "Нет аккаунта? Зарегистрироваться"}
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -175,9 +178,15 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  container: {
-    flex: 1,
+  scrollContainer: {
+    flexGrow: 1,
     justifyContent: "center",
+    paddingVertical: 20,
+  },
+  container: {
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
     paddingHorizontal: 24,
     gap: 12,
   },

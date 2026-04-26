@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,7 +33,9 @@ function extractJson(text: string): string {
 
 export default function EventsScreen() {
   const { palette } = useAppTheme();
+  const { width } = useWindowDimensions();
   const { items, householdLabel } = useInventory();
+  const isCompactLayout = width < 760;
   const [peopleCount, setPeopleCount] = useState("6");
   const [menu, setMenu] = useState<EventDish[]>([]);
   const [selectedTitles, setSelectedTitles] = useState<string[]>([]);
@@ -144,16 +147,20 @@ export default function EventsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
       <ScreenHeader title="Посиделки" subtitle="Праздничное меню и закупка" familyLabel={householdLabel} />
 
-      <View style={styles.row}>
+      <View style={[styles.row, isCompactLayout && styles.rowCompact]}>
         <TextInput
           value={peopleCount}
           onChangeText={setPeopleCount}
           keyboardType="numeric"
           placeholder="Сколько человек"
           placeholderTextColor={palette.textMuted}
-          style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.card }]}
+          style={[
+            styles.input,
+            isCompactLayout && styles.inputCompact,
+            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
+          ]}
         />
-        <View style={styles.generateWrap}>
+        <View style={[styles.generateWrap, isCompactLayout && styles.generateWrapCompact]}>
           <PrimaryButton label="Сгенерировать" onPress={generateMenu} loading={isGenerating} />
         </View>
       </View>
@@ -205,10 +212,13 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16 },
+  container: { flex: 1, width: "100%", maxWidth: 960, alignSelf: "center", paddingHorizontal: 16 },
   row: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  rowCompact: { flexDirection: "column" },
   input: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  inputCompact: { width: "100%" },
   generateWrap: { minWidth: 150 },
+  generateWrapCompact: { width: "100%" },
   list: { gap: 8, paddingBottom: 20 },
   cardPressable: { borderRadius: 14 },
   cardPressablePressed: { opacity: 0.9, transform: [{ scale: 0.995 }] },

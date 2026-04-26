@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +29,8 @@ interface ShoppingItem {
 
 export default function ShoppingScreen() {
   const { palette } = useAppTheme();
+  const { width } = useWindowDimensions();
+  const isCompactLayout = width < 760;
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [familyLabel, setFamilyLabel] = useState("Family: ...");
   const [familyId, setFamilyId] = useState<string | null>(null);
@@ -165,15 +168,19 @@ export default function ShoppingScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.bg }]} edges={["top", "left", "right"]}>
       <ScreenHeader title="Покупки" subtitle="Список того, что нужно купить" familyLabel={familyLabel} />
-      <View style={styles.addRow}>
+      <View style={[styles.addRow, isCompactLayout && styles.addRowCompact]}>
         <TextInput
           value={manualTitle}
           onChangeText={setManualTitle}
           placeholder="Добавить вручную (например, Soap)"
           placeholderTextColor={palette.textMuted}
-          style={[styles.input, { borderColor: palette.border, color: palette.text, backgroundColor: palette.card }]}
+          style={[
+            styles.input,
+            isCompactLayout && styles.inputCompact,
+            { borderColor: palette.border, color: palette.text, backgroundColor: palette.card },
+          ]}
         />
-        <View style={styles.addButtonWrap}>
+        <View style={[styles.addButtonWrap, isCompactLayout && styles.addButtonWrapCompact]}>
           <PrimaryButton label="Добавить" onPress={addManualItem} />
         </View>
       </View>
@@ -211,10 +218,13 @@ export default function ShoppingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16 },
+  container: { flex: 1, width: "100%", maxWidth: 960, alignSelf: "center", paddingHorizontal: 16 },
   addRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  addRowCompact: { flexDirection: "column" },
   input: { flex: 1, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  inputCompact: { width: "100%" },
   addButtonWrap: { minWidth: 116 },
+  addButtonWrapCompact: { width: "100%" },
   clearButton: {
     alignSelf: "flex-start",
     borderWidth: 1,
